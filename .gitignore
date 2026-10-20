@@ -1,0 +1,4 @@
+*.log
+preflight-telemetria.log
+.DS_Store
+tmp/
