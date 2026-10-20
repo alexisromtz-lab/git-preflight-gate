@@ -1,6 +1,7 @@
 # HUELLA-CI-TEMPLATE-20261020
 # HUELLA-CI-TEMPLATE-FIX-20261020
 # HUELLA-CI-TEMPLATE-APPARATUS-20261020
+# HUELLA-CI-TEMPLATE-ADOPTABLE-V4-20261020
 #
 # Plantilla de CI fail-closed para los repositorios que hoy no miden nada.
 #
@@ -13,12 +14,14 @@
 #     el comando en <repo>/.github/ci-apparatus (una línea).
 #   Si no hay ni lo uno ni lo otro, el job FALLA: un repo sin aparato no es verde.
 #
-# FALSIFICADOR (medido, no supuesto) en alexisromtz-lab/ci-fail-closed-falsifier:
-#   árbol sin tests ni declaración -> rojo  NO_APPARATUS_DECLARED
-#   tests pytest que pasan         -> verde
-#   tests pytest que fallan        -> rojo
-#   aparato declarado que pasa     -> verde
-#   aparato declarado que falla    -> rojo
+# FALSIFICADOR (medido, no supuesto) en alexisromtz-lab/ci-fail-closed-falsifier,
+# PÚBLICO desde 2026-10-20T22:16:30Z: la cita es auditable sin token (API anónima
+# responde 200). Una rama por control, cada una con su corrida completada:
+#   sin-aparato     árbol sin tests ni declaración -> rojo  NO_APPARATUS_DECLARED
+#   con-test        tests pytest que pasan         -> verde
+#   fail-test       tests pytest que fallan        -> rojo
+#   main            aparato declarado que pasa     -> verde
+#   app-shell-fail  aparato declarado que falla    -> rojo
 #
 # CORRECCIÓN 1: el guard era `if: hashFiles(...)` a nivel de job; GitHub rechazó
 # el workflow entero (0 jobs, «workflow file issue»). `hashFiles` no existe en el
@@ -28,6 +31,14 @@
 # cuyo aparato es un banco bash (git-preflight-gate, tests/must_fail.sh): certificó
 # la ausencia de una forma y no de las otras. Ahora el aparato se declara o se
 # detecta; el rojo solo cae cuando NO HAY NADA que medir.
+# CORRECCIÓN 3 (v4): se rechazó la rama «verde si es un repo de documentación
+# declarado». Un verde sin medición no es un repo sano: es la tautología F-D1 con
+# check verde. El repo sin aparato sale ROJO (NO_APPARATUS_DECLARED) hasta que
+# declare un comando que mida algo; el silencio se declara skipped, nunca verde.
+# CORRECCIÓN 4 (v4): `pip install` ya no asume manifiesto — 0 de 15 repos públicos
+# tienen requirements.txt (medido 2026-10-20T22:05Z). La ausencia de manifiesto es
+# una rama declarada (SIN_MANIFIESTO), no un fallo tragado: si el manifiesto existe
+# y la instalación falla, es rojo.
 
 name: ci-fail-closed
 
