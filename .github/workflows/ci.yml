@@ -3,6 +3,16 @@
 # HUELLA-CI-TEMPLATE-APPARATUS-20261020
 # HUELLA-CI-TEMPLATE-ADOPTABLE-V4-20261020
 # HUELLA-CI-PYTHON-V5-PROHIBICION-EVAL-20261020
+# HUELLA-CI-PYTHON-V5-ERRATA-1-CONTE-DECORADO-20261020
+#
+# ERRATA 1 (v5, medida en producción): el parseador de conteo no conocía el
+# formato NO silencioso de pytest — `====== 26 passed in 0.10s ======` — y puso
+# en rojo con VACUIDAD_EJECUCION a protocol-core (run 39515729665),
+# protocol-core-dist y motor-nesting, que SÍ habían ejecutado 26, 8 y 4 tests.
+# La decoración `=` al inicio de la línea hacía fallar el ancla `^\s*`. Es el
+# tercer falso rojo de la familia (antes: sangría de mocha, glifo ℹ de node).
+# Cura: ancla por NO-alfanumérico (`^[^A-Za-z0-9]*`) y se recupera `N passing`
+# de mocha, que la v5 había perdido al reescribir la matriz.
 #
 # Plantilla de CI fail-closed para los repositorios que hoy no miden nada.
 #
@@ -286,13 +296,17 @@ jobs:
           txt = open(sys.argv[1], encoding='utf-8', errors='replace').read()
 
           # Contadores POSITIVOS por familia de runner. Cada patrón captura un entero.
+          # El ancla `^[^A-Za-z0-9]*` acepta la decoración de cada runner: sangría de
+          # mocha, glifo «ℹ» de node --test y la línea `==== N passed ====` de pytest
+          # sin -q. Sin ella el instrumento se vuelve más frágil que el objeto medido.
           positivos = [
               r'^\s*(?:\u2139\s*|#\s*)?pass\s+(\d+)\s*$',   # node --test spec «ℹ pass N» / TAP «# pass N»
               r'^\s*Ran\s+(\d+)\s+tests?\s+in',        # unittest
               r'^\s*Tests?:\s*(\d+)\s+passed',         # jest
               r'^\s*Tests\s+(\d+)\s+passed',           # vitest
-              r'^\s*(\d+)\s+passed',                   # pytest «N passed in …» / mocha
-              r'^\s*(\d+)\s+tests?\s+passed',          # bun / genérico
+              r'^[^A-Za-z0-9]*(\d+)\s+passed',         # pytest «N passed in …» (con o sin -q)
+              r'^[^A-Za-z0-9]*(\d+)\s+passing',        # mocha «  N passing»
+              r'^[^A-Za-z0-9]*(\d+)\s+tests?\s+passed',  # bun / genérico
               r'^\s*ok\s+\d+',                         # TAP: una línea ok = un test
           ]
           # Contadores NEGATIVOS explícitos: si el runner DICE cero, es rojo aunque
@@ -302,8 +316,9 @@ jobs:
               r'^\s*Ran\s+0\s+tests?\s+in',
               r'^\s*Tests?:\s*0\s+passed',
               r'^\s*Tests\s+0\s+passed',
-              r'^\s*0\s+passed',
-              r'^\s*0\s+tests?\s+passed',
+              r'^[^A-Za-z0-9]*0\s+passed',
+              r'^[^A-Za-z0-9]*0\s+passing',
+              r'^[^A-Za-z0-9]*0\s+tests?\s+passed',
               r'no\s+tests?\s+ran',
           ]
 
