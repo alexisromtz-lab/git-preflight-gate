@@ -2,6 +2,7 @@
 # HUELLA-CI-TEMPLATE-FIX-20261020
 # HUELLA-CI-TEMPLATE-APPARATUS-20261020
 # HUELLA-CI-TEMPLATE-ADOPTABLE-V4-20261020
+# HUELLA-CI-PYTHON-V5-PROHIBICION-EVAL-20261020
 #
 # Plantilla de CI fail-closed para los repositorios que hoy no miden nada.
 #
@@ -10,9 +11,41 @@
 #
 # ADOPTAR: copiar este archivo a <repo>/.github/workflows/ci.yml .
 #   · repo con tests pytest  -> con eso basta (se detectan test_*.py / *_test.py).
-#   · repo cuyo aparato NO es pytest (banco .sh, make, script propio) -> declarar
-#     el comando en <repo>/.github/ci-apparatus (una línea).
+#   · repo cuyo aparato NO es pytest -> declarar el contrato de DOS campos en
+#     <repo>/.github/ci-apparatus:
+#
+#         comando: <comando real, nunca eval en línea>
+#         mide: tests | sintaxis | manifiesto | banco
+#         evidencia: <regex que el verificador imprime al medir>   # manifiesto | banco
+#
+#     · tests      -> una salida de runner que reporte tests ejecutados (> 0).
+#     · sintaxis   -> un chequeador de la whitelist (py_compile | compileall |
+#                     mypy | ruff | flake8 | pylint | pyright), vía `-m` si es python.
+#     · manifiesto -> veredicto con conteo (el "N" del veredicto tiene que ser > 0).
+#     · banco      -> veredicto de banco de casos con conteo (> 0).
+#     · binario    -> RESERVADO, no implementado: falla (un tipo sin implementar
+#                     no puede firmar verde).
+#   La declaración de UN solo campo ya no vale: sin `mide:` no hay forma de saber
+#   qué se midió, y un rc 0 sin tipo es una exención con forma de agujero.
 #   Si no hay ni lo uno ni lo otro, el job FALLA: un repo sin aparato no es verde.
+#
+# CORRECCIÓN 5 (v5): medido el 2026-10-20 contra la plantilla v4 de este mismo
+# repo, la rama `python-hueco-eval-ciego` (run 39513892220) declaraba
+# `python -c 'pass'` y el CI FIRMÓ VERDE: cero mediciones, certificado firmado,
+# en los 14 repos que usan esta plantilla. El contrato de un campo no puede
+# distinguir «el aparato midió» de «el aparato dijo que sí». v5 prohíbe la
+# evaluación en línea y exige tipo + evidencia por tipo.
+# CORRECCIÓN 6 (v5): se rechaza la whitelist CERRADA de runners que se dictó para
+# Node. En este portafolio hay aparatos que no son runners (verify_manifest.py,
+# bancos must-fail en bash) y una whitelist de runners los habría puesto rojos a
+# los que hoy están verdes. La forma correcta es lista negra (lo que no puede ser)
+# + tipo declarado + evidencia declarada.
+# CORRECCIÓN 7 (v5): `mide: binario` queda RESERVADO sin implementar. Un tipo que
+# el workflow no sabe verificar es una exención; y una exención con rc 0 es el
+# falso verde que esta ley existe para matar. Se declara MIDE_NO_IMPLEMENTADO.
+#   · Reparto medido (2026-10-20): 7 repos `python .github/verify_manifest.py`
+#     (manifiesto) · 2 repos manifiesto+pytest · 5 repos pytest (tests) ·
+#     3 repos banco must-fail (banco) · 3 repos sin declaración (detección pytest).
 #
 # FALSIFICADOR (medido, no supuesto) en alexisromtz-lab/ci-fail-closed-falsifier,
 # PÚBLICO desde 2026-10-20T22:16:30Z: la cita es auditable sin token (API anónima
@@ -63,26 +96,132 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Resolver el aparato (declarado gana a detectado)
+      - name: Resolver el aparato (contrato v5 — declaración gana a detección)
         run: |
           set -euo pipefail
           if [ -f .github/ci-apparatus ]; then
-            cmd=$(tr -d '\r' < .github/ci-apparatus | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' | head -n 1)
-            if [ -z "$cmd" ]; then
-              echo "APPARATUS_EMPTY: .github/ci-apparatus existe pero no declara comando — failing closed."
+            campos=$(tr -d '\r' < .github/ci-apparatus \
+              | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' || true)
+            cmd=$(printf '%s\n' "$campos" | sed -n 's/^[[:space:]]*comando:[[:space:]]*//p' | head -n 1)
+            mide=$(printf '%s\n' "$campos" | sed -n 's/^[[:space:]]*mide:[[:space:]]*//p' | head -n 1)
+            evid=$(printf '%s\n' "$campos" | sed -n 's/^[[:space:]]*evidencia:[[:space:]]*//p' | head -n 1)
+            suelta=$(printf '%s\n' "$campos" | grep -vE '^[[:space:]]*(comando|mide|evidencia):' | head -n 1 || true)
+            if [ -z "$cmd" ] && [ -n "$suelta" ]; then
+              echo "APPARATUS_SIN_TIPO: declaración de un solo campo ('$suelta'). El contrato v5 exige 'comando:' + 'mide:' (y 'evidencia:' si mide es manifiesto o banco) — failing closed."
               exit 1
             fi
+            if [ -z "$cmd" ] || [ -z "$mide" ]; then
+              echo "APPARATUS_EMPTY: .github/ci-apparatus no declara 'comando:' y 'mide:' a la vez — failing closed."
+              exit 1
+            fi
+            {
+              printf 'APPARATUS=%s\n' "$cmd"
+              printf 'MIDE=%s\n' "$mide"
+              printf 'EVIDENCIA=%s\n' "$evid"
+              printf 'ORIGEN=declarado\n'
+            } >> "$GITHUB_ENV"
             echo "APPARATUS_DECLARED: $cmd"
-            printf 'APPARATUS=%s\n' "$cmd" >> "$GITHUB_ENV"
+            echo "APPARATUS_MIDE: $mide"
           elif [ -n "$(find . \( -name 'test_*.py' -o -name '*_test.py' \) \
                         -not -path './.git/*' -not -path '*/node_modules/*' \
                         -not -path './.venv/*' -print -quit)" ]; then
             echo "APPARATUS_DETECTED: pytest"
-            echo "APPARATUS=pytest" >> "$GITHUB_ENV"
+            {
+              printf 'APPARATUS=%s\n' 'python -m pytest -q'
+              printf 'MIDE=tests\n'
+              printf 'EVIDENCIA=\n'
+              printf 'ORIGEN=detectado\n'
+            } >> "$GITHUB_ENV"
           else
             echo "NO_APPARATUS_DECLARED: no .github/ci-apparatus and no test_*.py / *_test.py — failing closed."
             exit 1
           fi
+
+      - name: Validar la declaración (v5 — eval en línea prohibido y tipo declarado)
+        run: |
+          set -euo pipefail
+          case "$MIDE" in
+            tests|sintaxis|manifiesto|banco) ;;
+            binario)
+              echo "MIDE_NO_IMPLEMENTADO: 'mide: binario' está reservado y no implementado; un tipo sin implementación no puede firmar verde — failing closed."
+              exit 1 ;;
+            *)
+              echo "APPARATUS_TIPO_DESCONOCIDO: 'mide: $MIDE' fuera del vocabulario (tests | sintaxis | manifiesto | banco) — failing closed."
+              exit 1 ;;
+          esac
+
+          primer=$(printf '%s' "$APPARATUS" | awk '{print $1}')
+          resto=$(printf '%s' "$APPARATUS" | cut -s -d' ' -f2-)
+          if [ "$primer" = "env" ]; then
+            primer=$(printf '%s' "$resto" | awk '{print $1}')
+            resto=$(printf '%s' "$resto" | cut -s -d' ' -f2-)
+          fi
+          base=${primer##*/}
+          case "$base" in
+            true|false|:|echo|printf|exit)
+              echo "APPARATUS_VACUO: '$APPARATUS' no mide nada — failing closed."
+              exit 1 ;;
+            eval|exec|source|.)
+              echo "APPARATUS_INVALIDO: '$APPARATUS' evalúa en línea; la evidencia tiene que ser un archivo versionado — failing closed."
+              exit 1 ;;
+            python|python3|pypy|pypy3)
+              if printf '%s' "$resto" | grep -qE '(^|[[:space:]])-c([[:space:]]|=|$)'; then
+                echo "APPARATUS_INVALIDO: '$base -c' evalúa en línea; la evidencia tiene que ser un archivo versionado — failing closed."
+                exit 1
+              fi
+              if printf '%s' "$resto" | grep -qE '(^|[[:space:]])-([[:space:]]|$)'; then
+                echo "APPARATUS_INVALIDO: '$base -' lee el programa de la entrada estándar; la evidencia tiene que ser un archivo versionado — failing closed."
+                exit 1
+              fi ;;
+            bash|sh|zsh|dash|ksh)
+              if printf '%s' "$resto" | grep -qE '(^|[[:space:]])-c([[:space:]]|=|$)'; then
+                echo "APPARATUS_INVALIDO: '$base -c' evalúa en línea; el banco de casos tiene que ser un archivo versionado — failing closed."
+                exit 1
+              fi ;;
+          esac
+
+          if [ "$MIDE" = "sintaxis" ]; then
+            chequeador=$base
+            case "$base" in
+              python|python3|pypy|pypy3)
+                if ! printf '%s' "$resto" | grep -qE '(^|[[:space:]])-m([[:space:]]|=|$)'; then
+                  echo "APPARATUS_INVALIDO: mide=sintaxis con '$base' exige '-m <chequeador>': la sintaxis se mide con un chequeador, no ejecutando el código — failing closed."
+                  exit 1
+                fi
+                chequeador=$(printf '%s' "$resto" | sed -n 's/.*-m[[:space:]]*=*\([^[:space:]]*\).*/\1/p' | head -n 1) ;;
+            esac
+            case "$chequeador" in
+              py_compile|compileall|mypy|ruff|flake8|pylint|pyright) ;;
+              *)
+                echo "APPARATUS_INVALIDO: mide=sintaxis pero '$chequeador' no es un chequeador de la whitelist (py_compile | compileall | mypy | ruff | flake8 | pylint | pyright) — failing closed."
+                exit 1 ;;
+            esac
+            echo "SINTAXIS_DECLARADA: chequeador '$chequeador'."
+          fi
+
+          if [ "$MIDE" = "manifiesto" ] || [ "$MIDE" = "banco" ]; then
+            if [ -z "$EVIDENCIA" ]; then
+              echo "APPARATUS_SIN_EVIDENCIA: mide=$MIDE exige 'evidencia:' (el regex que el verificador imprime al medir); sin ella un rc 0 no distingue medir de no medir — failing closed."
+              exit 1
+            fi
+            echo "EVIDENCIA_DECLARADA: /$EVIDENCIA/"
+          fi
+          echo "DECLARACION_OK: mide=$MIDE · $APPARATUS"
+
+      - name: Guarda de vacuidad (un aparato declarado se juzga por su evidencia)
+        run: |
+          set -euo pipefail
+          if [ "$ORIGEN" != "detectado" ]; then
+            echo "VACUIDAD_DELEGADA: aparato declarado; la evidencia la exigen 'Validar la declaración' y 'Correr el aparato' según mide=$MIDE."
+            exit 0
+          fi
+          found=$(find . \( -name .git -o -name node_modules -o -name .venv -o -name __pycache__ \) -prune -o \
+                    -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit)
+          if [ -z "$found" ]; then
+            echo "NO_TESTS_FOUND: pytest detectado por nombre pero el repo no tiene archivos test_*.py / *_test.py — failing closed."
+            exit 1
+          fi
+          echo "VACUIDAD_OK: pytest + archivo de test '$found'."
 
       - name: Instalar dependencias (falla cerrado)
         run: |
@@ -97,21 +236,102 @@ jobs:
             echo "SIN_MANIFIESTO: no requirements.txt ni pyproject.toml — pytest pelado."
           fi
 
-      - name: Correr el aparato
+      - name: Correr el aparato (v5 — rc, evidencia por tipo y conteo de tests)
         run: |
           set -euo pipefail
+          echo "RUN_APPARATUS: $APPARATUS"
+          log=$(mktemp)
           set +e
-          if [ "$APPARATUS" = "pytest" ]; then
-            python -m pytest -q
-          else
-            echo "RUN_APPARATUS: $APPARATUS"
-            bash -c "$APPARATUS"
-          fi
-          rc=$?
+          bash -c "$APPARATUS" 2>&1 | tee "$log"
+          rc=${PIPESTATUS[0]}
           set -e
-          if [ "$APPARATUS" = "pytest" ] && [ "$rc" -eq 5 ]; then
-            echo "NO_TESTS_COLLECTED: pytest no recogió ningún test — failing closed."
+          echo "APPARATUS_RC=$rc"
+          if [ "$MIDE" = "tests" ] && [ "$rc" -eq 5 ]; then
+            echo "NO_TESTS_COLLECTED: pytest no recogió ningún test (rc 5) — failing closed."
             exit 1
           fi
-          echo "APPARATUS_RC=$rc"
-          exit "$rc"
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+
+          if [ "$MIDE" = "sintaxis" ]; then
+            if [ -n "$EVIDENCIA" ] && ! grep -qE "$EVIDENCIA" "$log"; then
+              echo "VACUIDAD_EVIDENCIA: mide=sintaxis con rc 0 pero la evidencia declarada /$EVIDENCIA/ no aparece en la salida — failing closed."
+              exit 1
+            fi
+            msg="SINTAXIS_OK: rc 0 del chequeador '$APPARATUS'"
+            if [ -n "$EVIDENCIA" ]; then msg="$msg · evidencia /$EVIDENCIA/"; fi
+            echo "$msg"
+            exit 0
+          fi
+
+          if [ "$MIDE" = "manifiesto" ] || [ "$MIDE" = "banco" ]; then
+            etq=$(printf '%s' "$MIDE" | tr '[:lower:]' '[:upper:]')
+            if ! grep -qE "$EVIDENCIA" "$log"; then
+              echo "VACUIDAD_${etq}: la evidencia declarada /$EVIDENCIA/ no aparece en la salida; un rc 0 sin veredicto no es una medida — failing closed."
+              exit 1
+            fi
+            if ! grep -E "$EVIDENCIA" "$log" | grep -qE '[1-9]'; then
+              echo "VACUIDAD_${etq}: la evidencia /$EVIDENCIA/ no trae ningún entero > 0; un veredicto sobre 0 elementos no mide nada — failing closed."
+              exit 1
+            fi
+            echo "${etq}_OK: evidencia /$EVIDENCIA/ presente y con conteo."
+            exit 0
+          fi
+
+          set +e
+          python3 - "$log" <<'PY'
+          import re, sys
+
+          txt = open(sys.argv[1], encoding='utf-8', errors='replace').read()
+
+          # Contadores POSITIVOS por familia de runner. Cada patrón captura un entero.
+          positivos = [
+              r'^\s*(?:\u2139\s*|#\s*)?pass\s+(\d+)\s*$',   # node --test spec «ℹ pass N» / TAP «# pass N»
+              r'^\s*Ran\s+(\d+)\s+tests?\s+in',        # unittest
+              r'^\s*Tests?:\s*(\d+)\s+passed',         # jest
+              r'^\s*Tests\s+(\d+)\s+passed',           # vitest
+              r'^\s*(\d+)\s+passed',                   # pytest «N passed in …» / mocha
+              r'^\s*(\d+)\s+tests?\s+passed',          # bun / genérico
+              r'^\s*ok\s+\d+',                         # TAP: una línea ok = un test
+          ]
+          # Contadores NEGATIVOS explícitos: si el runner DICE cero, es rojo aunque
+          # otra línea parezca positiva.
+          negativos = [
+              r'^\s*(?:\u2139\s*|#\s*)?pass\s+0\s*$',
+              r'^\s*Ran\s+0\s+tests?\s+in',
+              r'^\s*Tests?:\s*0\s+passed',
+              r'^\s*Tests\s+0\s+passed',
+              r'^\s*0\s+passed',
+              r'^\s*0\s+tests?\s+passed',
+              r'no\s+tests?\s+ran',
+          ]
+
+          cuenta = 0
+          for p in positivos:
+              if p == r'^\s*ok\s+\d+':
+                  cuenta = max(cuenta, len(re.findall(p, txt, re.M)))
+              else:
+                  for m in re.findall(p, txt, re.M):
+                      try:
+                          cuenta = max(cuenta, int(m))
+                      except ValueError:
+                          pass
+
+          cero_explicito = any(re.search(p, txt, re.M) for p in negativos)
+
+          if cero_explicito:
+              print("VACUIDAD_EJECUCION: el runner declaró 0 tests ejecutados — failing closed.")
+              sys.exit(1)
+          if cuenta < 1:
+              print("VACUIDAD_EJECUCION: la salida no reporta ningún test ejecutado "
+                    "(se buscaron formatos de pytest, unittest, node --test, jest, vitest, mocha, bun y TAP) — failing closed.")
+              sys.exit(1)
+          print(f"EJECUCION_OK: {cuenta} test(s) reportados por el runner.")
+          PY
+          rc2=$?
+          set -e
+          if [ "$rc2" -ne 0 ]; then
+            echo "EJECUCION_RC=$rc2"
+            exit "$rc2"
+          fi

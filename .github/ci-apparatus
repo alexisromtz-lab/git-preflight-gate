@@ -1,3 +1,8 @@
-# HUELLA-CI-ADOPTION-GIT-PREFLIGHT-GATE-20261020
-# Aparato declarado: el banco de casos del gate (9 casos, RC 0 = todos los casos discriminan).
-bash tests/must_fail.sh
+# HUELLA-CI-PYTHON-V5-PROHIBICION-EVAL-20261020
+# Contrato v5: comando: + mide: (+ evidencia: si mide es manifiesto o banco).
+# La plantilla de este repo ya no firma verde con un comando que no mide.
+# Aparato declarado: el banco de casos del gate (9 casos, RC 0 = todos los casos
+# discriminan).
+comando: bash tests/must_fail.sh
+mide: banco
+evidencia: BANCO: [0-9]+/[0-9]+
