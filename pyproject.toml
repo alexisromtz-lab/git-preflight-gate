@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "git-preflight-gate"
+version = "0.1.1"
+description = "Pre-write preflight gate (bash) and CI authority gate (Python composite action): fail-closed, standard library only except PyYAML for the CI extra."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "alexisromtz-lab" }]
+dependencies = []
+
+[project.optional-dependencies]
+ci-authority-gate = ["PyYAML==6.0.3"]
+
+[project.urls]
+Homepage = "https://github.com/alexisromtz-lab/git-preflight-gate"
+
+[tool.setuptools]
+# El repositorio no distribuye modulos importables: el instrumento de la accion
+# vive en sim/gate_workflows_ci.py y se invoca por ruta absoluta. El empaquetado
+# existe solo para que `pip install "<action_dir>[ci-authority-gate]"` resuelva
+# PyYAML sin arrastrar descubrimiento automatico de paquetes.
+packages = []

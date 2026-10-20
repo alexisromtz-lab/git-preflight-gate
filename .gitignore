@@ -2,3 +2,6 @@
 preflight-telemetria.log
 .DS_Store
 tmp/
+*.egg-info/
+__pycache__/
+*.pyc

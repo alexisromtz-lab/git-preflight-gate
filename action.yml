@@ -1,0 +1,109 @@
+# HUELLA-ACTION-GATE-CI-TOPOLOGIA-20261020
+# Envoltorio composite sobre el instrumento medido sim/gate_workflows_ci.py
+# (615 lineas / 21470 bytes / git blob ff9c69a944e7965b3fda0901f7745d80a9e85c7c /
+#  sha256-16 073954a84f3c84fd). La CLI medida del instrumento es
+#   [ruta] | --root R | --file F | --json | --self-test | --must-fail
+# y resuelve los workflows en os.path.join(raiz, ".github", "workflows").
+# El flag --workflows-dir NO existe en el instrumento: el contrato pedido se
+# conserva en el NOMBRE del input y su valor viaja por --root (directorio) o
+# por --file (un unico YAML). RC del instrumento = min(causas presentes).
+name: "CI Authority Gate"
+description: "Gate estructural de topologia de autoridad en .github/workflows/: 7 causas unicas, fail-closed."
+author: "alexisromtz-lab"
+
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  workflows-dir:
+    description: "Directorio de workflows, o un unico archivo .yml/.yaml. Directorio -> --root; archivo -> --file."
+    required: false
+    default: ".github/workflows"
+  root:
+    description: "Raiz del arbol objetivo cuando workflows-dir es un directorio. El instrumento lee <raiz>/.github/workflows."
+    required: false
+    default: "."
+  python-bin:
+    description: "Interprete de Python 3."
+    required: false
+    default: "python3"
+  fail-on-red:
+    description: "Si es true, el step falla con el RC del instrumento cuando el veredicto no es PASA."
+    required: false
+    default: "true"
+
+outputs:
+  rc:
+    description: "RC del instrumento: 0 = PASA; min(causas) = FALLO CERRADO; 31 = 0 archivos, nada que medir."
+    value: ${{ steps.gate.outputs.rc }}
+  veredicto:
+    description: "PASA si rc = 0; FALLO CERRADO en cualquier otro caso."
+    value: ${{ steps.gate.outputs.veredicto }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        ACTION_DIR: ${{ github.action_path }}
+      run: |
+        set -u
+        GATE="$ACTION_DIR/sim/gate_workflows_ci.py"
+        PY="${{ inputs.python-bin }}"
+        WD="${{ inputs.workflows-dir }}"
+        ROOT="${{ inputs.root }}"
+        OUT="${GITHUB_OUTPUT:-/dev/stdout}"
+        if [ ! -f "$GATE" ]; then
+          echo "GATE AUSENTE: $GATE no existe." >&2
+          echo "rc=14" >> "$OUT"
+          echo "veredicto=FALLO CERRADO" >> "$OUT"
+          exit 14
+        fi
+        "$PY" -m pip install --disable-pip-version-check "$ACTION_DIR[ci-authority-gate]"
+        RC=0
+        if [ -f "$WD" ]; then
+          "$PY" "$GATE" --file "$WD" || RC=$?
+        else
+          "$PY" "$GATE" --root "$ROOT" || RC=$?
+        fi
+        echo "rc=$RC" >> "$OUT"
+        if [ "$RC" -eq 0 ]; then
+          echo "veredicto=PASA" >> "$OUT"
+        else
+          echo "veredicto=FALLO CERRADO" >> "$OUT"
+        fi
+        if [ "$RC" -ne 0 ] && [ "${{ inputs.fail-on-red }}" = "true" ]; then
+          echo "GATE CI: FALLO CERRADO rc=$RC" >&2
+          exit "$RC"
+        fi
+
+# ---------------------------------------------------------------------------
+# HUELLA-ACTION-YML-FAIL-CLOSED-DECL-20261020
+# ---------------------------------------------------------------------------
+# DECLARACION: SEMANTICA FAIL-CLOSED DEL GATE CI
+#
+# Lo que este action NO hace, y por que:
+#
+#   1. NO adivina el dominio de workflows. El instrumento resuelve un unico
+#      punto: <raiz>/.github/workflows. Por eso el input workflows-dir se
+#      enruta a --file cuando el path existe y a --root cuando no. Un --root
+#      que aceptara cualquier directorio con YAMLs seria editar el metro para
+#      que quepa la demo.
+#
+#   2. NO omite el gate por ausencia de archivos. Si el universo de workflows
+#      resuelve a cero archivos, el instrumento reporta UNIVERSO_VACIO
+#      (causa 31) y el RC sale 31. Cero archivos es FRACASO, no aprobacion:
+#      fail-closed.
+#
+#   3. NO sustituye el veredicto por el exito de la accion. El RC del
+#      instrumento se propaga tal cual (rc = min(causas)); fail-on-red decide
+#      solo si la accion enrojece, no si el instrumento midio el objeto.
+#
+#   4. NO publica la salida cruda como aprobacion. La tabla de causas y el
+#      veredicto salen con la causa impresa: un caso que devuelve el RC
+#      esperado por otra rama no discrimina.
+#
+# Cierre: cuando el gate no puede medir, la accion falla. No hay override.
+# ---------------------------------------------------------------------------

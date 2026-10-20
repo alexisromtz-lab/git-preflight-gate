@@ -72,6 +72,63 @@ telemetría — el instrumento que se cuenta a sí mismo.
   se repara (fail-closed es correcto).
 - No juzga el contenido: certifica identidad y colisión, no corrección.
 
+## La Action de la raíz: CI Authority Gate
+
+El `action.yml` de este repositorio es una **action composite** que ejecuta un segundo
+instrumento, `sim/gate_workflows_ci.py`: un verificador estructural de la topología de
+autoridad en `.github/workflows/`. Cinco invariantes contables, siete causas tipadas,
+`RC = min(causas)`, `UNIVERSO_VACIO` = causa `31` (cero archivos es fracaso, no
+aprobación).
+
+Identidad medida del instrumento copiado a este árbol:
+
+| propiedad | valor |
+|---|---|
+| líneas / bytes | 615 / 21470 |
+| git blob | `ff9c69a944e7965b3fda0901f7745d80a9e85c7c` |
+| sha256-16 | `073954a84f3c84fd` |
+
+Uso como consumidor:
+
+```yaml
+- uses: alexisromtz-lab/git-preflight-gate@v0.1.1
+  with:
+    workflows-dir: .github/workflows
+    fail-on-red: "true"
+```
+
+Los cuatro inputs (`workflows-dir`, `root`, `python-bin`, `fail-on-red`) y los dos
+outputs (`rc`, `veredicto`) conservan el contrato del `action.yml` que este repositorio
+**reemplaza**: cualquier CI que apuntaba a la action de la raíz de un repositorio de
+trabajo migra cambiando sólo el nombre del repositorio en `uses:`; el resto del bloque
+`with:` no cambia.
+
+La acción no adivina el dominio: el instrumento resuelve un único punto,
+`<raiz>/.github/workflows`. Por eso `workflows-dir` se enruta a `--file` cuando el path
+existe y a `--root` cuando no. Un `--root` que aceptara cualquier directorio con YAMLs
+sería editar el metro para que quepa la demo.
+
+Dependencia única: `PyYAML==6.0.3`, declarada como extra opcional
+(`pip install ".[ci-authority-gate]"`). El resto es stdlib. El instrumento no lee red,
+no escribe archivos, no usa aleatoriedad y no consulta el reloj.
+
+Control positivo medido: workflow con `permissions: contents: read` y `uses` fijado por
+SHA completo ⇒ `CAUSAS PRESENTES: ninguna`, `VEREDICTO: PASA`, `RC=0`. Control negativo:
+`pull_request_target` + `permissions: write-all` + `curl | bash` + `actions/checkout@v4`
+⇒ `CAUSAS PRESENTES: [1, 2, 5]`, `RC=1`. Universo vacío ⇒ `CAUSAS PRESENTES: [31]`,
+`RC=31`.
+
+## Los dos instrumentos no se confunden
+
+| instrumento | pregunta | forma |
+|---|---|---|
+| `preflight-gate.sh` | ¿este agente puede escribir *este archivo* ahora? | CLI bash, tupla de destino |
+| `sim/gate_workflows_ci.py` | ¿esta topología de CI concentra autoridad sin control? | action composite + CLI Python |
+
+El primero protege una escritura; el segundo audita un árbol de workflows. Comparten la
+doctrina (fail-closed, causa impresa, cero archivos = imposibilidad declarada), no el
+código.
+
 ## Licencia
 
 MIT. Ver `LICENSE`.
