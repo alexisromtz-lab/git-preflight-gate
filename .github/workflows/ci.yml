@@ -1,22 +1,33 @@
 # HUELLA-CI-TEMPLATE-20261020
 # HUELLA-CI-TEMPLATE-FIX-20261020
+# HUELLA-CI-TEMPLATE-APPARATUS-20261020
 #
 # Plantilla de CI fail-closed para los repositorios que hoy no miden nada.
 #
 # INERTE EN SU REPO DE ORIGEN POR DISEÑO: el job se declara *skipped* aquí
 # (skipped = «no medí», nunca un verde) y solo mide donde se adopta.
 #
-# ADOPTAR: copiar este archivo a <repo>/.github/workflows/ci.yml . Una pieza.
+# ADOPTAR: copiar este archivo a <repo>/.github/workflows/ci.yml .
+#   · repo con tests pytest  -> con eso basta (se detectan test_*.py / *_test.py).
+#   · repo cuyo aparato NO es pytest (banco .sh, make, script propio) -> declarar
+#     el comando en <repo>/.github/ci-apparatus (una línea).
+#   Si no hay ni lo uno ni lo otro, el job FALLA: un repo sin aparato no es verde.
 #
 # FALSIFICADOR (medido, no supuesto) en alexisromtz-lab/ci-fail-closed-falsifier:
-#   árbol sin tests      -> rojo   NO_TESTS_FOUND
-#   tests que pasan      -> verde
-#   tests que fallan     -> rojo   (prueba que pytest corre de verdad)
+#   árbol sin tests ni declaración -> rojo  NO_APPARATUS_DECLARED
+#   tests pytest que pasan         -> verde
+#   tests pytest que fallan        -> rojo
+#   aparato declarado que pasa     -> verde
+#   aparato declarado que falla    -> rojo
 #
-# CORRECCIÓN DE LA PRIMERA VERSIÓN: el guard era `if: hashFiles(...)` a nivel de
-# job; GitHub rechazó el workflow entero (0 jobs, «workflow file issue»).
-# `hashFiles` no existe en el contexto del `if` de job — disponibles: github,
-# needs, vars, inputs. Se corrigió a `github.repository`, que sí está.
+# CORRECCIÓN 1: el guard era `if: hashFiles(...)` a nivel de job; GitHub rechazó
+# el workflow entero (0 jobs, «workflow file issue»). `hashFiles` no existe en el
+# contexto del `if` de job (github, needs, vars, inputs). Corregido a
+# `github.repository`.
+# CORRECCIÓN 2: la sonda solo conocía pytest y publicó `NO_TESTS_FOUND` en un repo
+# cuyo aparato es un banco bash (git-preflight-gate, tests/must_fail.sh): certificó
+# la ausencia de una forma y no de las otras. Ahora el aparato se declara o se
+# detecta; el rojo solo cae cuando NO HAY NADA que medir.
 
 name: ci-fail-closed
 
@@ -41,17 +52,26 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Probar existencia de tests (fail-closed)
+      - name: Resolver el aparato (declarado gana a detectado)
         run: |
           set -euo pipefail
-          found=$(find . \( -name 'test_*.py' -o -name '*_test.py' \) \
-                    -not -path './.git/*' -not -path '*/node_modules/*' \
-                    -not -path './.venv/*' -print -quit)
-          if [ -z "$found" ]; then
-            echo "NO_TESTS_FOUND: no test_*.py / *_test.py in the tree — failing closed."
+          if [ -f .github/ci-apparatus ]; then
+            cmd=$(tr -d '\r' < .github/ci-apparatus | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' | head -n 1)
+            if [ -z "$cmd" ]; then
+              echo "APPARATUS_EMPTY: .github/ci-apparatus existe pero no declara comando — failing closed."
+              exit 1
+            fi
+            echo "APPARATUS_DECLARED: $cmd"
+            printf 'APPARATUS=%s\n' "$cmd" >> "$GITHUB_ENV"
+          elif [ -n "$(find . \( -name 'test_*.py' -o -name '*_test.py' \) \
+                        -not -path './.git/*' -not -path '*/node_modules/*' \
+                        -not -path './.venv/*' -print -quit)" ]; then
+            echo "APPARATUS_DETECTED: pytest"
+            echo "APPARATUS=pytest" >> "$GITHUB_ENV"
+          else
+            echo "NO_APPARATUS_DECLARED: no .github/ci-apparatus and no test_*.py / *_test.py — failing closed."
             exit 1
           fi
-          echo "TESTS_FOUND: $found"
 
       - name: Instalar dependencias (falla cerrado)
         run: |
@@ -66,15 +86,21 @@ jobs:
             echo "SIN_MANIFIESTO: no requirements.txt ni pyproject.toml — pytest pelado."
           fi
 
-      - name: Correr tests (cero recogidos = rojo)
+      - name: Correr el aparato
         run: |
           set -euo pipefail
           set +e
-          python -m pytest -q
+          if [ "$APPARATUS" = "pytest" ]; then
+            python -m pytest -q
+          else
+            echo "RUN_APPARATUS: $APPARATUS"
+            bash -c "$APPARATUS"
+          fi
           rc=$?
           set -e
-          if [ "$rc" -eq 5 ]; then
+          if [ "$APPARATUS" = "pytest" ] && [ "$rc" -eq 5 ]; then
             echo "NO_TESTS_COLLECTED: pytest no recogió ningún test — failing closed."
             exit 1
           fi
+          echo "APPARATUS_RC=$rc"
           exit "$rc"

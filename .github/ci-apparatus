@@ -1,0 +1,3 @@
+# HUELLA-CI-ADOPTION-GIT-PREFLIGHT-GATE-20261020
+# Aparato declarado: el banco de casos del gate (9 casos, RC 0 = todos los casos discriminan).
+bash tests/must_fail.sh
