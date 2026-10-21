@@ -8,6 +8,58 @@
 # HUELLA-CI-PY-V7-MODO-COMPUESTO-20261020
 # HUELLA-CI-PY-V8-SIN-DETECCION-20261020
 # HUELLA-CI-PY-V9-VETO-OPERADORES-20261020
+# HUELLA-CI-PY-V10-PYTEST-DECLARADO-20261020
+# HUELLA-CI-PY-V11-VETO-CONSTRUCTOS-20261020
+# HUELLA-CI-VETO-CONSTRUCTOS-20261020
+#
+# CORRECCIÓN 13 (v11, veto de constructos): la v9 vetó los operadores en la
+# SUPERFICIE del `comando:`. Un subshell los esconde un nivel más abajo y el
+# veto de primer nivel no lo ve: `comando: (npx tsc --noEmit || true)` pasaba
+# verde porque el `||` vive dentro del paréntesis, y `$(… )`, el retroceso y un
+# `alias` expandido DESPUÉS del validador hacen lo mismo. Ley nueva: se rechazan
+# los constructos que meten un programa o un operador en un nivel que el
+# validador no lee — `(`, `)`, `$(` (y por tanto todo `$( … )`), el retroceso,
+# `alias ` y `exec ` — con el veredicto `CONSTRUCTO_PROHIBIDO`. No se parsea
+# recursivamente: quien necesite agrupar mueve la lógica a un script versionado
+# (`tests/run.sh`) y el aparato lo invoca. Una línea de aparato, la lógica en un
+# archivo.
+#   · QUOTE-AWARE (medido, no supuesto): los constructos DENTRO de comillas
+#     simples o dobles son literales y se permiten — `python -m pytest -k
+#     "test (foo)"` sigue verde. Se borran los tramos entrecomillados antes de
+#     buscar; el resto se mira igual que en la v9, y los operadores `;` `|` `&`
+#     `set +…` siguen vetados.
+#   · MEDIDO ANTES DE ESCRIBIR (2026-10-20): censo por API de los 22 aparatos
+#     del portafolio contra la ley nueva — 22 `OPERADORES_OK`, 0 rojos. Ningún
+#     adoptante usa paréntesis, sustitución, retroceso, `alias` ni `exec` fuera
+#     de comillas: la ley no pone rojo a nadie hoy.
+#   · LÍMITE DECLARADO (séptimo orden): la quote-awareness es mínima — solo
+#     `'…'` y `"…"`. No maneja escapes (`\`) ni here-docs; un here-doc no lo
+#     detecta este veto (el aparato es una línea, y una línea no lleva here-doc
+#     real). La lista de constructos es CERRADA: un `{ … }` de bash se añade en
+#     una tupla nueva, no se inventa aquí.
+#
+# CORRECCIÓN 12 (v10, pytest declarado): el paso de instalación hacía
+# `python -m pip install pytest` ANTES de mirar el manifiesto, para TODOS los
+# aparatos. Medido el 2026-10-20 (censo de los 8 aparatos que invocan pytest,
+# PREREGISTRO_CENSO_PYTEST_PLANTILLA_20261020.md §9): 6 repos invocaban pytest
+# sin declararlo en ningún manifiesto y firmaban verde porque el runner se lo
+# regalaba; `plasma-ade` lo tenía solo dentro de un comentario; `protocol-core`
+# lo negaba en README y NOTICE. El runner no puede ser la dependencia de nadie:
+# si el repo no la declara, no se instala y el job cae con
+# DEPENDENCIA_NO_DECLARADA. Declarar cuesta una línea; que el runner tape la
+# falta es lo que vuelve invisible el hueco.
+#   · Alcance medido: 8 aparatos, 7 invocan pytest y los 7 declaran tras B1
+#     (HUELLA-CENSO-PYTEST-PLANTILLA-DECLARACIONES-20261020); 1 (platino-corpus,
+#     `mide: manifiesto`) no invoca y no se le instala nada. 0 rojos esperados.
+#   · `pip install -e .` NO instala extras: quien declare pytest en
+#     `[project.optional-dependencies]` no lo tiene importable tras `-e .`. Ese
+#     caso se mide (`import pytest`) y se instala DESPUÉS de verificar la
+#     declaración, con la spec declarada en el manifiesto, no con una versión
+#     ciega elegida por el runner.
+#   · LÍMITE DECLARADO: la detección de la declaración es textual (una línea
+#     activa `pytest…` en requirements.txt, o una spec `"pytest…"` entre
+#     comillas en pyproject.toml). Un manifiesto que la construya por
+#     sustitución no se distingue.
 #
 # CORRECCIÓN 11 (v9, veto de operadores): el validador miraba el PRIMER TOKEN y
 # no los OPERADORES. `comando: python -m ruff check . || true` pasaba la whitelist
@@ -242,7 +294,7 @@ jobs:
           fi
 
       # HUELLA-CI-PY-V9-NOMBRE-PASO-20261020
-      - name: Validar la declaración (v9 — eval en línea y operadores de enmascarado prohibidos, modo(s) y evidencia(s))
+      - name: Validar la declaración (v11 — eval en línea, operadores de enmascarado y constructos prohibidos, modo(s) y evidencia(s))
         run: |
           set -euo pipefail
           modos_decl=$(printf '%s' "$MIDE" | tr '+' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
@@ -294,6 +346,43 @@ jobs:
             resto=$(printf '%s' "$resto" | cut -s -d' ' -f2-)
           fi
           base=${primer##*/}
+          # HUELLA-CI-PY-V11-CONSTRUCTOS — ( … ), $( … ), `…`, 'alias ', 'exec ' fuera de comillas
+          # esconden el operador a un nivel que el veto de operadores no lee.
+          fuera_comillas=$(printf '%s' "$APPARATUS" | awk '{
+            s = $0; n = length(s); q = ""; out = ""
+            for (i = 1; i <= n; i++) {
+              c = substr(s, i, 1)
+              if (q == "") {
+                if (c == "\047" || c == "\"") { q = c; continue }
+                out = out c
+              } else if (c == q) { q = "" }
+            }
+            printf "%s", out
+          }')
+          if printf '%s' "$fuera_comillas" | grep -qF '$('; then
+            echo "CONSTRUCTO_PROHIBIDO: '\$(' en 'comando:' — la sustitución de comandos evalúa un programa que el veto no lee; el aparato no puede llevar su veredicto dentro de una expansión — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qF '`'; then
+            echo "CONSTRUCTO_PROHIBIDO: '\`' en 'comando:' — la sustitución con retroceso evalúa un programa que el veto no lee — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qF '('; then
+            echo "CONSTRUCTO_PROHIBIDO: '(' en 'comando:' — un subshell esconde sus operadores del veto (el '||' de dentro no se ve); si hace falta agrupar, la lógica va en un script versionado y el aparato lo invoca — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qF ')'; then
+            echo "CONSTRUCTO_PROHIBIDO: ')' en 'comando:' — un subshell esconde sus operadores del veto (el '||' de dentro no se ve); si hace falta agrupar, la lógica va en un script versionado y el aparato lo invoca — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qE '(^|[^[:alnum:]_])alias[[:space:]]'; then
+            echo "CONSTRUCTO_PROHIBIDO: 'alias ' en 'comando:' — el alias se expande DESPUÉS del veto: el operador vive en la definición y el validador solo ve el nombre — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$fuera_comillas" | grep -qE '(^|[^[:alnum:]_])exec[[:space:]]'; then
+            echo "CONSTRUCTO_PROHIBIDO: 'exec ' en 'comando:' — 'exec' sustituye el shell del step: el rc que se lee deja de ser el del aparato — failing closed."
+            exit 1
+          fi
           sin_conj=$(printf '%s' "$APPARATUS" | sed 's/&&//g')
           if printf '%s' "$sin_conj" | grep -q ';'; then
             echo "APPARATUS_INVALIDO: ';' en 'comando:' — el separador corta la propagación del exit code (lo de después corre aunque lo de antes falle). Encadena con '&&' si el segundo paso solo vale con el primero en verde — failing closed."
@@ -377,17 +466,39 @@ jobs:
           set -euo pipefail
           echo "VACUIDAD_DELEGADA: aparato declarado (ORIGEN=$ORIGEN); la evidencia la exigen 'Validar la declaración' y 'Correr el aparato' según mide=$MIDE."
 
-      - name: Instalar dependencias (falla cerrado)
+      - name: Instalar dependencias (v10 — el runner no instala lo que el repo no declara)
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip > /dev/null
-          python -m pip install pytest
+          declara=0
+          spec=""
           if [ -f requirements.txt ]; then
+            if grep -qiE '^[[:space:]]*pytest([<>=!~;[:space:]]|$)' requirements.txt; then declara=1; fi
             python -m pip install -r requirements.txt
           elif [ -f pyproject.toml ]; then
+            spec=$(grep -vE '^[[:space:]]*#' pyproject.toml | grep -oiE '"(pytest[<>=!~][^"]*|pytest)"' | head -1 | tr -d '"' || true)
+            if [ -n "$spec" ]; then declara=1; fi
             python -m pip install -e .
           else
-            echo "SIN_MANIFIESTO: no requirements.txt ni pyproject.toml — pytest pelado."
+            echo "SIN_MANIFIESTO: no requirements.txt ni pyproject.toml."
+          fi
+          if printf '%s' "$APPARATUS" | grep -qE '(^|[^[:alnum:]_-])pytest([^[:alnum:]_-]|$)'; then
+            if [ "$declara" -ne 1 ]; then
+              echo "DEPENDENCIA_NO_DECLARADA: el aparato invoca pytest y ningun manifiesto lo declara (requirements.txt activo o pyproject.toml) — el runner ya no instala pytest a ciegas; failing closed."
+              exit 1
+            fi
+            if ! python -c 'import pytest' > /dev/null 2>&1; then
+              if [ -n "$spec" ]; then
+                python -m pip install "$spec"
+                echo "PYTEST_DESDE_EXTRAS: instalado '$spec' (declarado en pyproject.toml; 'pip install -e .' no instala extras)."
+              else
+                echo "PYTEST_NO_IMPORTABLE: declarado en requirements.txt pero no importable tras -r — failing closed."
+                exit 1
+              fi
+            fi
+            echo "DEPENDENCIA_OK: invoca pytest · declara=1"
+          else
+            echo "DEPENDENCIA_OK: el aparato no invoca pytest; solo se instala el manifiesto."
           fi
 
       - name: Correr el aparato (v7 — rc, evidencia por modo e instrumento junitxml)
