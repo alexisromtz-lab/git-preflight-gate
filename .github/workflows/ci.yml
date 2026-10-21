@@ -6,6 +6,27 @@
 # HUELLA-CI-PYTHON-V5-ERRATA-1-CONTE-DECORADO-20261020
 # HUELLA-CI-PY-V6-INSTRUMENTO-20261020
 # HUELLA-CI-PY-V7-MODO-COMPUESTO-20261020
+# HUELLA-CI-PY-V8-SIN-DETECCION-20261020
+#
+# CORRECCIÓN 10 (v8, sin detección): se RETIRA la rama de DETECCIÓN. v7
+# autodeclaraba: sin `.github/ci-apparatus` y con cualquier `test_*.py` presente
+# escribía `APPARATUS_DETECTED: pytest`, `MIDE=tests`, `EVIDENCIA=junitxml`,
+# `ORIGEN=detectado` y el job firmaba VERDE. Medido en el falsador de esta misma
+# ley (caso C4, acta ACTA_GW_DECLARACION_20261020.md §4): borrar la declaración
+# de un repo con tests devolvía verde. La detección no es una declaración: es
+# una suposición del instrumento, y una suposición con rc 0 es exactamente el
+# falso verde que esta ley existe para matar. v8: sin `.github/ci-apparatus` el
+# job cae con NO_APPARATUS_DECLARED, tenga o no archivos `test_*.py`.
+#   · Riesgo medido antes de escribir, no supuesto: censo por API 2026-10-21T02:0xZ
+#     sobre los 15 repos que montan esta ley en `main` -> 15 declaran, 0 firmaban
+#     por detección. La v8 no pone rojo a ningún adoptante legítimo.
+#   · Se retira con ella la segunda rama muerta de la guarda de vacuidad
+#     (`VACUIDAD_OK` / `NO_TESTS_FOUND`, que solo se alcanzaba con
+#     ORIGEN=detectado). `ORIGEN` sigue en el entorno para el contrato de la
+#     guarda, pero ya no tiene más valor que `declarado`.
+#   · LÍMITE DECLARADO: el contrato no puede distinguir un `ci-apparatus`
+#     declarado a mano de uno generado; v8 exige que EXISTA y que su evidencia
+#     verifique, no que alguien lo haya pensado.
 #
 # CORRECCIÓN 9 (v7, modo compuesto): medido 2026-10-21T01:39Z en los logs de
 # fotonica-monotile (run 39528566405) y optica-kerr-2d (run 39528573559), hay
@@ -67,9 +88,11 @@
 # (skipped = «no medí», nunca un verde) y solo mide donde se adopta.
 #
 # ADOPTAR: copiar este archivo a <repo>/.github/workflows/ci.yml .
-#   · repo con tests pytest  -> con eso basta (se detectan test_*.py / *_test.py;
-#     el propio workflow añade `--junitxml=/tmp/junit.xml` porque es ÉL quien
-#     elige el comando, no una declaración que diga otra cosa).
+#   · v8: SIN `.github/ci-apparatus` el job FALLA (NO_APPARATUS_DECLARED). Ya no
+#     hay «con eso basta»: un repo con tests pytest declara igual su aparato.
+#       comando: python -m pytest -q tests --junitxml=/tmp/junit.xml
+#       mide: tests
+#       evidencia: junitxml
 #   · repo cuyo aparato NO es pytest -> declarar el contrato de TRES campos en
 #     <repo>/.github/ci-apparatus:
 #
@@ -168,7 +191,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Resolver el aparato (contrato v7 — declaración gana a detección)
+      - name: Resolver el aparato (contrato v8 — declaración obligatoria, sin detección)
         run: |
           set -euo pipefail
           if [ -f .github/ci-apparatus ]; then
@@ -194,22 +217,12 @@ jobs:
             } >> "$GITHUB_ENV"
             echo "APPARATUS_DECLARED: $cmd"
             echo "APPARATUS_MIDE: $mide"
-          elif [ -n "$(find . \( -name 'test_*.py' -o -name '*_test.py' \) \
-                        -not -path './.git/*' -not -path '*/node_modules/*' \
-                        -not -path './.venv/*' -print -quit)" ]; then
-            echo "APPARATUS_DETECTED: pytest"
-            {
-              printf 'APPARATUS=%s\n' 'python -m pytest -q --junitxml=/tmp/junit.xml'
-              printf 'MIDE=tests\n'
-              printf 'EVIDENCIA=junitxml\n'
-              printf 'ORIGEN=detectado\n'
-            } >> "$GITHUB_ENV"
           else
-            echo "NO_APPARATUS_DECLARED: no .github/ci-apparatus and no test_*.py / *_test.py — failing closed."
+            echo "NO_APPARATUS_DECLARED: no .github/ci-apparatus — failing closed (v8 retiró la detección: un repo con test_*.py también declara su aparato)."
             exit 1
           fi
 
-      - name: Validar la declaración (v7 — eval en línea prohibido, modo(s) y evidencia(s))
+      - name: Validar la declaración (v8 — eval en línea prohibido, modo(s) y evidencia(s))
         run: |
           set -euo pipefail
           modos_decl=$(printf '%s' "$MIDE" | tr '+' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
@@ -312,7 +325,7 @@ jobs:
           fi
 
           if tiene_modo tests && ! tiene_ev junitxml; then
-            echo "APPARATUS_INCOMPATIBLE: mide=$MIDE exige 'evidencia: junitxml' y que 'comando:' escriba /tmp/junit.xml con --junitxml=...; contar el texto del runner no es contrato (tres falsos rojos medidos: sangría de mocha, glifo de node 24, `===== N passed =====` de pytest) — failing closed."
+            echo "APPARATUS_INCOMPATIBLE: mide=$MIDE exige 'evidencia: junitxml' y que 'comando:' escriba /tmp/junit.xml con --junitxml=...; contar el texto del runner no es contrato (tres falsos rojos medidos: sangría de mocha, glifo de node 24, decorado '===== N passed =====' de pytest) — failing closed."
             exit 1
           fi
           if tiene_ev junitxml && ! tiene_modo tests; then
@@ -321,20 +334,10 @@ jobs:
           fi
           echo "DECLARACION_OK: mide=$MIDE · $APPARATUS · evidencia=${EVIDENCIA:-—}"
 
-      - name: Guarda de vacuidad (un aparato declarado se juzga por su evidencia)
+      - name: Guarda de vacuidad (v8 — un aparato se juzga por su evidencia)
         run: |
           set -euo pipefail
-          if [ "$ORIGEN" != "detectado" ]; then
-            echo "VACUIDAD_DELEGADA: aparato declarado; la evidencia la exigen 'Validar la declaración' y 'Correr el aparato' según mide=$MIDE."
-            exit 0
-          fi
-          found=$(find . \( -name .git -o -name node_modules -o -name .venv -o -name __pycache__ \) -prune -o \
-                    -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit)
-          if [ -z "$found" ]; then
-            echo "NO_TESTS_FOUND: pytest detectado por nombre pero el repo no tiene archivos test_*.py / *_test.py — failing closed."
-            exit 1
-          fi
-          echo "VACUIDAD_OK: pytest + archivo de test '$found'."
+          echo "VACUIDAD_DELEGADA: aparato declarado (ORIGEN=$ORIGEN); la evidencia la exigen 'Validar la declaración' y 'Correr el aparato' según mide=$MIDE."
 
       - name: Instalar dependencias (falla cerrado)
         run: |
