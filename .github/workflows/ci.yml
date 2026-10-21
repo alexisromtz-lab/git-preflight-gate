@@ -7,6 +7,25 @@
 # HUELLA-CI-PY-V6-INSTRUMENTO-20261020
 # HUELLA-CI-PY-V7-MODO-COMPUESTO-20261020
 # HUELLA-CI-PY-V8-SIN-DETECCION-20261020
+# HUELLA-CI-PY-V9-VETO-OPERADORES-20261020
+#
+# CORRECCIÓN 11 (v9, veto de operadores): el validador miraba el PRIMER TOKEN y
+# no los OPERADORES. `comando: python -m ruff check . || true` pasaba la whitelist
+# de `sintaxis` (el primer token es `python -m ruff`) y el `|| true` devolvía rc 0
+# aunque el chequeador fallara: el aparato firmaba `SINTAXIS_OK` con el chequeador
+# roto. Misma familia que el `eval` que solo inspecciona el primer token, y el
+# mismo hueco que la v7 de la ley hermana de Node cierra en el mismo acto.
+#   · MEDIDO ANTES DE ESCRIBIR (2026-10-20): censo por API de los 20 aparatos del
+#     portafolio — `&&` en 6 (todos `manifiesto+tests`), `;` 0, `|` 0, `&` 0,
+#     `set +…` 0. El veto no pone rojo a ningún adoptante; `&&` se conserva porque
+#     propaga el fallo y es la forma legítima de encadenar manifiesto y tests.
+#   · Alcance declarado: hoy 0 repos Python declaran `sintaxis` (censo: 1
+#     adoptante en todo el portafolio, `meta-webhook`, y es Node). El veto se
+#     escribe igual porque el hueco es de la LEY, no del adoptante: una ley con un
+#     agujero espera a que alguien lo encuentre.
+#   · LÍMITE DECLARADO: el veto es textual, no un parser de shell. Un operador
+#     construido por sustitución (`$(printf '\x3b')`) o un `&` dentro de comillas
+#     no se distingue; fabricarlo exige escribirlo en el diff. Se declara.
 #
 # CORRECCIÓN 10 (v8, sin detección): se RETIRA la rama de DETECCIÓN. v7
 # autodeclaraba: sin `.github/ci-apparatus` y con cualquier `test_*.py` presente
@@ -222,7 +241,8 @@ jobs:
             exit 1
           fi
 
-      - name: Validar la declaración (v8 — eval en línea prohibido, modo(s) y evidencia(s))
+      # HUELLA-CI-PY-V9-NOMBRE-PASO-20261020
+      - name: Validar la declaración (v9 — eval en línea y operadores de enmascarado prohibidos, modo(s) y evidencia(s))
         run: |
           set -euo pipefail
           modos_decl=$(printf '%s' "$MIDE" | tr '+' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
@@ -274,6 +294,24 @@ jobs:
             resto=$(printf '%s' "$resto" | cut -s -d' ' -f2-)
           fi
           base=${primer##*/}
+          sin_conj=$(printf '%s' "$APPARATUS" | sed 's/&&//g')
+          if printf '%s' "$sin_conj" | grep -q ';'; then
+            echo "APPARATUS_INVALIDO: ';' en 'comando:' — el separador corta la propagación del exit code (lo de después corre aunque lo de antes falle). Encadena con '&&' si el segundo paso solo vale con el primero en verde — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$sin_conj" | grep -q '|'; then
+            echo "APPARATUS_INVALIDO: '|' en 'comando:' — la tubería devuelve el exit code del último comando (y '||' el de la salida alternativa), así que enmascara el fallo del chequeador; dentro de 'bash -c' no hay pipefail que lo salve — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$sin_conj" | grep -q '&'; then
+            echo "APPARATUS_INVALIDO: '&' en 'comando:' — el aparato pasa a segundo plano y el exit code que se lee es el del shell, no el suyo — failing closed."
+            exit 1
+          fi
+          if printf '%s' "$APPARATUS" | grep -qE '(^|[^[:alnum:]_])set[[:space:]]+[+]'; then
+            echo "APPARATUS_INVALIDO: 'set +…' en 'comando:' desactiva la propagación de errores dentro del aparato (set +e / set +o errexit) — failing closed."
+            exit 1
+          fi
+          echo "OPERADORES_OK: sin ';' · '|' · '&' · 'set +…'; la conjunción '&&' se acepta (propaga el fallo)."
           case "$base" in
             true|false|:|echo|printf|exit)
               echo "APPARATUS_VACUO: '$APPARATUS' no mide nada — failing closed."
