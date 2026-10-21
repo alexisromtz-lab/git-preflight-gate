@@ -5,6 +5,31 @@
 # HUELLA-CI-PYTHON-V5-PROHIBICION-EVAL-20261020
 # HUELLA-CI-PYTHON-V5-ERRATA-1-CONTE-DECORADO-20261020
 # HUELLA-CI-PY-V6-INSTRUMENTO-20261020
+# HUELLA-CI-PY-V7-MODO-COMPUESTO-20261020
+#
+# CORRECCIÓN 9 (v7, modo compuesto): medido 2026-10-21T01:39Z en los logs de
+# fotonica-monotile (run 39528566405) y optica-kerr-2d (run 39528573559), hay
+# aparatos que MIDEN DOS COSAS y solo certifican una:
+# `python .github/verify_manifest.py && python -m pytest -q tests` declarado
+# `mide: manifiesto` corre pytest — la cadena `&&` propaga su rc, así que un
+# test rojo YA ponía el job rojo (no era un falso verde de rc) — pero el
+# certificado habla sólo de artefactos: «MANIFIESTO_SANO: 17» con «19 passed»
+# en el log, «MANIFIESTO_SANO: 21» con «9 passed». El conteo de tests existía
+# en el TEXTO y no en el CONTRATO: declarado, no exigido. v7 admite `mide:`
+# COMPUESTO (`manifiesto+tests`) y `evidencia:` como lista separada por `;`:
+# el token `junitxml` certifica los tests con el instrumento de la v6, el regex
+# certifica el veredicto textual con el entero > 0 de la v5, y TODOS los modos
+# declarados tienen que verificar o el job cae con EVIDENCIA_INCOMPLETA.
+#   · No relaja nada: sigue prohibido el eval en línea, sigue exigido el parseo
+#     de <testcase> cuando hay tests y el entero > 0 cuando hay manifiesto.
+#   · El orden de verificación es fijo (sintaxis -> manifiesto/banco -> tests);
+#     el orden de `mide:` documenta la intención, no cambia qué se ejecuta: el
+#     que manda sobre la ejecución es `comando:`.
+#   · Compatibilidad medida, no supuesta: `mide:` de un solo valor se comporta
+#     exactamente igual que en v6 (14 repos verdes con la v6; el falsador local
+#     cubre el control de no-regresión).
+#   · `manifiesto+banco` se rechaza: dos veredictos textuales en un solo
+#     aparato no se pueden atribuir a cuál de los dos imprimió qué.
 #
 # CORRECCIÓN 8 (v6, instrumento): se RETIRA la matriz de texto. El texto del
 # runner no es un contrato: cambia con la versión, con el reporter y con la
@@ -50,9 +75,16 @@
 #
 #         comando: <comando real, nunca eval en línea>
 #         mide: tests | sintaxis | manifiesto | banco
+#                  | manifiesto+tests     # COMPUESTO (v7): todos los modos que
+#                  | banco+tests          #   se declaren tienen que verificar
 #         evidencia: junitxml            # obligatorio si mide=tests
 #                  | <regex literal>     # obligatorio si mide=manifiesto | banco
+#                  | <regex literal>; junitxml   # COMPUESTO (v7): lista con `;`
 #
+#     · compuesto  -> `mide: manifiesto+tests` exige LAS DOS evidencias: el regex
+#                     (con entero > 0) y el token junitxml. Si falta una,
+#                     EVIDENCIA_INCOMPLETA nombra cuál. Un certificado que cubre
+#                     un modo y no el otro es el agujero que v7 cierra.
 #     · tests      -> el comando DEBE escribir /tmp/junit.xml y se declara
 #                     `--junitxml=/tmp/junit.xml` dentro de `comando:`. El
 #                     veredicto se cuenta sobre <testcase>, no sobre el texto.
@@ -136,7 +168,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Resolver el aparato (contrato v6 — declaración gana a detección)
+      - name: Resolver el aparato (contrato v7 — declaración gana a detección)
         run: |
           set -euo pipefail
           if [ -f .github/ci-apparatus ]; then
@@ -177,10 +209,42 @@ jobs:
             exit 1
           fi
 
-      - name: Validar la declaración (v6 — eval en línea prohibido, tipo y evidencia)
+      - name: Validar la declaración (v7 — eval en línea prohibido, modo(s) y evidencia(s))
         run: |
           set -euo pipefail
+          modos_decl=$(printf '%s' "$MIDE" | tr '+' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
+          tiene_modo() { printf '%s\n' "$modos_decl" | grep -qx "$1"; }
+          tiene_ev()   { printf '%s' "$EVIDENCIA" | tr ';' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -qx "$1"; }
+          EV_REGEX=$(printf '%s' "$EVIDENCIA" | tr ';' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | grep -vx 'junitxml' | paste -sd';' - || true)
           case "$MIDE" in
+            *+*)
+              if [ -z "$modos_decl" ]; then
+                echo "APPARATUS_MIDE: modo compuesto vacío en 'mide: $MIDE' — failing closed."
+                exit 1
+              fi
+              if tiene_modo binario; then
+                echo "MIDE_NO_IMPLEMENTADO: 'mide: binario' está reservado y no implementado; un tipo sin implementación no puede firmar verde — failing closed."
+                exit 1
+              fi
+              suelto=$(printf '%s\n' "$modos_decl" | grep -vxE 'tests|sintaxis|manifiesto|banco' | head -n 1 || true)
+              if [ -n "$suelto" ]; then
+                echo "APPARATUS_TIPO_DESCONOCIDO: 'mide: $suelto' fuera del vocabulario (tests | sintaxis | manifiesto | banco) — failing closed."
+                exit 1
+              fi
+              if tiene_modo manifiesto && tiene_modo banco; then
+                echo "APPARATUS_MIDE: 'manifiesto+banco' es ambiguo (dos veredictos textuales en un solo aparato: el certificado no puede atribuir cuál imprimió qué) — failing closed."
+                exit 1
+              fi
+              if tiene_modo tests && ! tiene_ev 'junitxml'; then
+                echo "EVIDENCIA_INCOMPLETA: junitxml — 'mide: $MIDE' declara tests y 'evidencia:' no trae el token junitxml (declara 'evidencia: <regex>; junitxml' y escribe /tmp/junit.xml con --junitxml=) — failing closed."
+                exit 1
+              fi
+              if (tiene_modo manifiesto || tiene_modo banco) && [ -z "$EV_REGEX" ]; then
+                echo "EVIDENCIA_INCOMPLETA: manifiesto — 'mide: $MIDE' declara un veredicto textual y 'evidencia:' no trae su regex (la que imprime el entero > 0) — failing closed."
+                exit 1
+              fi
+              echo "COMPUESTO_DECLARADO: modos=$(printf '%s' "$modos_decl" | paste -sd'+' -) · evidencia_textual=/${EV_REGEX:-—}/ · junitxml=$(tiene_ev 'junitxml' && echo si || echo no)"
+              ;;
             tests|sintaxis|manifiesto|banco) ;;
             binario)
               echo "MIDE_NO_IMPLEMENTADO: 'mide: binario' está reservado y no implementado; un tipo sin implementación no puede firmar verde — failing closed."
@@ -220,7 +284,7 @@ jobs:
               fi ;;
           esac
 
-          if [ "$MIDE" = "sintaxis" ]; then
+          if tiene_modo sintaxis; then
             chequeador=$base
             case "$base" in
               python|python3|pypy|pypy3)
@@ -239,20 +303,20 @@ jobs:
             echo "SINTAXIS_DECLARADA: chequeador '$chequeador'."
           fi
 
-          if [ "$MIDE" = "manifiesto" ] || [ "$MIDE" = "banco" ]; then
-            if [ -z "$EVIDENCIA" ]; then
+          if tiene_modo manifiesto || tiene_modo banco; then
+            if [ -z "$EV_REGEX" ]; then
               echo "APPARATUS_SIN_EVIDENCIA: mide=$MIDE exige 'evidencia:' (el regex que el verificador imprime al medir); sin ella un rc 0 no distingue medir de no medir — failing closed."
               exit 1
             fi
-            echo "EVIDENCIA_DECLARADA: /$EVIDENCIA/"
+            echo "EVIDENCIA_DECLARADA: /$EV_REGEX/"
           fi
 
-          if [ "$MIDE" = "tests" ] && [ "$EVIDENCIA" != "junitxml" ]; then
-            echo "APPARATUS_INCOMPATIBLE: mide=tests exige 'evidencia: junitxml' y que 'comando:' escriba /tmp/junit.xml con --junitxml=...; contar el texto del runner no es contrato (tres falsos rojos medidos: sangría de mocha, glifo de node 24, `===== N passed =====` de pytest) — failing closed."
+          if tiene_modo tests && ! tiene_ev junitxml; then
+            echo "APPARATUS_INCOMPATIBLE: mide=$MIDE exige 'evidencia: junitxml' y que 'comando:' escriba /tmp/junit.xml con --junitxml=...; contar el texto del runner no es contrato (tres falsos rojos medidos: sangría de mocha, glifo de node 24, `===== N passed =====` de pytest) — failing closed."
             exit 1
           fi
-          if [ "$EVIDENCIA" = "junitxml" ] && [ "$MIDE" != "tests" ]; then
-            echo "APPARATUS_INCOMPATIBLE: 'evidencia: junitxml' solo vale con mide=tests; mide=$MIDE exige el regex literal que imprime su verificador — failing closed."
+          if tiene_ev junitxml && ! tiene_modo tests; then
+            echo "APPARATUS_INCOMPATIBLE: 'evidencia: junitxml' solo vale si 'mide:' declara tests; mide=$MIDE exige el regex literal que imprime su verificador — failing closed."
             exit 1
           fi
           echo "DECLARACION_OK: mide=$MIDE · $APPARATUS · evidencia=${EVIDENCIA:-—}"
@@ -285,9 +349,15 @@ jobs:
             echo "SIN_MANIFIESTO: no requirements.txt ni pyproject.toml — pytest pelado."
           fi
 
-      - name: Correr el aparato (v6 — rc, evidencia por tipo e instrumento junitxml)
+      - name: Correr el aparato (v7 — rc, evidencia por modo e instrumento junitxml)
         run: |
           set -euo pipefail
+          modos_decl=$(printf '%s' "$MIDE" | tr '+' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
+          tiene_modo() { printf '%s\n' "$modos_decl" | grep -qx "$1"; }
+          tiene_ev()   { printf '%s' "$EVIDENCIA" | tr ';' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -qx "$1"; }
+          EV_REGEX=$(printf '%s' "$EVIDENCIA" | tr ';' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | grep -vx 'junitxml' | paste -sd';' - || true)
+          compuesto=0
+          case "$MIDE" in *+*) compuesto=1 ;; esac
           echo "RUN_APPARATUS: $APPARATUS"
           rm -f /tmp/junit.xml
           inicio=$(date +%s)
@@ -297,7 +367,7 @@ jobs:
           rc=${PIPESTATUS[0]}
           set -e
           echo "APPARATUS_RC=$rc"
-          if [ "$MIDE" = "tests" ] && [ "$rc" -eq 5 ]; then
+          if tiene_modo tests && [ "$rc" -eq 5 ]; then
             echo "NO_TESTS_COLLECTED: pytest no recogió ningún test (rc 5) — failing closed."
             exit 1
           fi
@@ -305,29 +375,34 @@ jobs:
             exit "$rc"
           fi
 
-          if [ "$MIDE" = "sintaxis" ]; then
-            if [ -n "$EVIDENCIA" ] && ! grep -qE "$EVIDENCIA" "$log"; then
-              echo "VACUIDAD_EVIDENCIA: mide=sintaxis con rc 0 pero la evidencia declarada /$EVIDENCIA/ no aparece en la salida — failing closed."
+          if tiene_modo sintaxis; then
+            if [ -n "$EV_REGEX" ] && ! grep -qE "$EV_REGEX" "$log"; then
+              echo "VACUIDAD_EVIDENCIA: mide=$MIDE con rc 0 pero la evidencia declarada /$EV_REGEX/ no aparece en la salida — failing closed."
               exit 1
             fi
             msg="SINTAXIS_OK: rc 0 del chequeador '$APPARATUS'"
-            if [ -n "$EVIDENCIA" ]; then msg="$msg · evidencia /$EVIDENCIA/"; fi
+            if [ -n "$EV_REGEX" ]; then msg="$msg · evidencia /$EV_REGEX/"; fi
             echo "$msg"
-            exit 0
+            if [ "$compuesto" -eq 0 ]; then exit 0; fi
           fi
 
-          if [ "$MIDE" = "manifiesto" ] || [ "$MIDE" = "banco" ]; then
-            etq=$(printf '%s' "$MIDE" | tr '[:lower:]' '[:upper:]')
-            if ! grep -qE "$EVIDENCIA" "$log"; then
-              echo "VACUIDAD_${etq}: la evidencia declarada /$EVIDENCIA/ no aparece en la salida; un rc 0 sin veredicto no es una medida — failing closed."
+          if tiene_modo manifiesto || tiene_modo banco; then
+            if tiene_modo manifiesto; then etq=MANIFIESTO; else etq=BANCO; fi
+            if ! grep -qE "$EV_REGEX" "$log"; then
+              echo "VACUIDAD_${etq}: la evidencia declarada /$EV_REGEX/ no aparece en la salida; un rc 0 sin veredicto no es una medida — failing closed."
               exit 1
             fi
-            if ! grep -E "$EVIDENCIA" "$log" | grep -qE '[1-9]'; then
-              echo "VACUIDAD_${etq}: la evidencia /$EVIDENCIA/ no trae ningún entero > 0; un veredicto sobre 0 elementos no mide nada — failing closed."
+            if ! grep -E "$EV_REGEX" "$log" | grep -qE '[1-9]'; then
+              echo "VACUIDAD_${etq}: la evidencia /$EV_REGEX/ no trae ningún entero > 0; un veredicto sobre 0 elementos no mide nada — failing closed."
               exit 1
             fi
-            echo "${etq}_OK: evidencia /$EVIDENCIA/ presente y con conteo."
-            exit 0
+            echo "${etq}_OK: evidencia /$EV_REGEX/ presente y con conteo."
+            if [ "$compuesto" -eq 0 ]; then exit 0; fi
+          fi
+
+          if ! tiene_modo tests; then
+            echo "APPARATUS_MIDE: mide=$MIDE no declara ningún modo verificable por este paso — failing closed."
+            exit 1
           fi
 
           set +e
@@ -393,4 +468,7 @@ jobs:
           if [ "$rc2" -ne 0 ]; then
             echo "EJECUCION_RC=$rc2"
             exit "$rc2"
+          fi
+          if [ "$compuesto" -eq 1 ]; then
+            echo "COMPUESTO_OK: $(printf '%s' "$modos_decl" | paste -sd'+' -) verificados — el certificado cubre TODAS las evidencias declaradas."
           fi
