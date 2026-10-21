@@ -4,6 +4,28 @@
 # HUELLA-CI-TEMPLATE-ADOPTABLE-V4-20261020
 # HUELLA-CI-PYTHON-V5-PROHIBICION-EVAL-20261020
 # HUELLA-CI-PYTHON-V5-ERRATA-1-CONTE-DECORADO-20261020
+# HUELLA-CI-PY-V6-INSTRUMENTO-20261020
+#
+# CORRECCIÓN 8 (v6, instrumento): se RETIRA la matriz de texto. El texto del
+# runner no es un contrato: cambia con la versión, con el reporter y con la
+# terminal (sangría de mocha, glifo «ℹ» de node 24, `===== 26 passed =====` de
+# pytest sin -q: tres falsos rojos medidos, uno por formato). v6 mide el
+# INSTRUMENTO: `mide: tests` exige `evidencia: junitxml`, el comando escribe
+# /tmp/junit.xml y el veredicto se cuenta sobre elementos <testcase>.
+#   · Se rechaza `grep -oP '(?<=tests=")'` + `head -1` como se dictó: `-P` no es
+#     portable y `head -1` toma el primer <testsuite>, que en un informe con
+#     varios ficheros o clases SUBCUENTA. Se cuentan los <testcase> del árbol.
+#   · Se rechaza que el script AÑADA `--junitxml` si falta: inyectar el flag es
+#     la misma reescritura oculta que la ERRATA 2 (`pytest` -> `python -m
+#     pytest -q`). El flag va en la declaración, donde se ve.
+#   · El XML manda sobre el rc: un envoltorio que se coma el rc pero deje
+#     <failure> en el informe cae en TESTS_FAILED.
+#   · Casos omitidos: 0 ejecutados de N casos es VACUIDAD_SKIP. Medir el
+#     instrumento incluye medir que el instrumento midió algo.
+#   · LÍMITE DECLARADO: un aparato que ESCRIBA un XML falso a mano pasa el
+#     contador. El XML no distingue quién lo escribió; eso lo declara el humano
+#     en `comando:` y ninguna evidencia EN BANDA puede refutarlo. Se cierra el
+#     archivo viejo (mtime anterior a la corrida -> JUNIT_VIEJO), no la mentira.
 #
 # ERRATA 1 (v5, medida en producción): el parseador de conteo no conocía el
 # formato NO silencioso de pytest — `====== 26 passed in 0.10s ======` — y puso
@@ -20,15 +42,20 @@
 # (skipped = «no medí», nunca un verde) y solo mide donde se adopta.
 #
 # ADOPTAR: copiar este archivo a <repo>/.github/workflows/ci.yml .
-#   · repo con tests pytest  -> con eso basta (se detectan test_*.py / *_test.py).
-#   · repo cuyo aparato NO es pytest -> declarar el contrato de DOS campos en
+#   · repo con tests pytest  -> con eso basta (se detectan test_*.py / *_test.py;
+#     el propio workflow añade `--junitxml=/tmp/junit.xml` porque es ÉL quien
+#     elige el comando, no una declaración que diga otra cosa).
+#   · repo cuyo aparato NO es pytest -> declarar el contrato de TRES campos en
 #     <repo>/.github/ci-apparatus:
 #
 #         comando: <comando real, nunca eval en línea>
 #         mide: tests | sintaxis | manifiesto | banco
-#         evidencia: <regex que el verificador imprime al medir>   # manifiesto | banco
+#         evidencia: junitxml            # obligatorio si mide=tests
+#                  | <regex literal>     # obligatorio si mide=manifiesto | banco
 #
-#     · tests      -> una salida de runner que reporte tests ejecutados (> 0).
+#     · tests      -> el comando DEBE escribir /tmp/junit.xml y se declara
+#                     `--junitxml=/tmp/junit.xml` dentro de `comando:`. El
+#                     veredicto se cuenta sobre <testcase>, no sobre el texto.
 #     · sintaxis   -> un chequeador de la whitelist (py_compile | compileall |
 #                     mypy | ruff | flake8 | pylint | pyright), vía `-m` si es python.
 #     · manifiesto -> veredicto con conteo (el "N" del veredicto tiene que ser > 0).
@@ -56,6 +83,9 @@
 #   · Reparto medido (2026-10-20): 7 repos `python .github/verify_manifest.py`
 #     (manifiesto) · 2 repos manifiesto+pytest · 5 repos pytest (tests) ·
 #     3 repos banco must-fail (banco) · 3 repos sin declaración (detección pytest).
+#   · Reparto medido para v6 (2026-10-20T23:4x Z, por declaración): 7 repos
+#     `mide: tests` (migran a junitxml) · 7 `manifiesto` · 3 `banco` · 3 sin
+#     declaración (detección, el workflow les pone el flag) · 2 Node (otra ley).
 #
 # FALSIFICADOR (medido, no supuesto) en alexisromtz-lab/ci-fail-closed-falsifier,
 # PÚBLICO desde 2026-10-20T22:16:30Z: la cita es auditable sin token (API anónima
@@ -106,7 +136,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Resolver el aparato (contrato v5 — declaración gana a detección)
+      - name: Resolver el aparato (contrato v6 — declaración gana a detección)
         run: |
           set -euo pipefail
           if [ -f .github/ci-apparatus ]; then
@@ -117,7 +147,7 @@ jobs:
             evid=$(printf '%s\n' "$campos" | sed -n 's/^[[:space:]]*evidencia:[[:space:]]*//p' | head -n 1)
             suelta=$(printf '%s\n' "$campos" | grep -vE '^[[:space:]]*(comando|mide|evidencia):' | head -n 1 || true)
             if [ -z "$cmd" ] && [ -n "$suelta" ]; then
-              echo "APPARATUS_SIN_TIPO: declaración de un solo campo ('$suelta'). El contrato v5 exige 'comando:' + 'mide:' (y 'evidencia:' si mide es manifiesto o banco) — failing closed."
+              echo "APPARATUS_SIN_TIPO: declaración de un solo campo ('$suelta'). El contrato v6 exige 'comando:' + 'mide:' + 'evidencia:' (junitxml si mide=tests; regex si mide=manifiesto o banco) — failing closed."
               exit 1
             fi
             if [ -z "$cmd" ] || [ -z "$mide" ]; then
@@ -137,9 +167,9 @@ jobs:
                         -not -path './.venv/*' -print -quit)" ]; then
             echo "APPARATUS_DETECTED: pytest"
             {
-              printf 'APPARATUS=%s\n' 'python -m pytest -q'
+              printf 'APPARATUS=%s\n' 'python -m pytest -q --junitxml=/tmp/junit.xml'
               printf 'MIDE=tests\n'
-              printf 'EVIDENCIA=\n'
+              printf 'EVIDENCIA=junitxml\n'
               printf 'ORIGEN=detectado\n'
             } >> "$GITHUB_ENV"
           else
@@ -147,7 +177,7 @@ jobs:
             exit 1
           fi
 
-      - name: Validar la declaración (v5 — eval en línea prohibido y tipo declarado)
+      - name: Validar la declaración (v6 — eval en línea prohibido, tipo y evidencia)
         run: |
           set -euo pipefail
           case "$MIDE" in
@@ -216,7 +246,16 @@ jobs:
             fi
             echo "EVIDENCIA_DECLARADA: /$EVIDENCIA/"
           fi
-          echo "DECLARACION_OK: mide=$MIDE · $APPARATUS"
+
+          if [ "$MIDE" = "tests" ] && [ "$EVIDENCIA" != "junitxml" ]; then
+            echo "APPARATUS_INCOMPATIBLE: mide=tests exige 'evidencia: junitxml' y que 'comando:' escriba /tmp/junit.xml con --junitxml=...; contar el texto del runner no es contrato (tres falsos rojos medidos: sangría de mocha, glifo de node 24, `===== N passed =====` de pytest) — failing closed."
+            exit 1
+          fi
+          if [ "$EVIDENCIA" = "junitxml" ] && [ "$MIDE" != "tests" ]; then
+            echo "APPARATUS_INCOMPATIBLE: 'evidencia: junitxml' solo vale con mide=tests; mide=$MIDE exige el regex literal que imprime su verificador — failing closed."
+            exit 1
+          fi
+          echo "DECLARACION_OK: mide=$MIDE · $APPARATUS · evidencia=${EVIDENCIA:-—}"
 
       - name: Guarda de vacuidad (un aparato declarado se juzga por su evidencia)
         run: |
@@ -246,10 +285,12 @@ jobs:
             echo "SIN_MANIFIESTO: no requirements.txt ni pyproject.toml — pytest pelado."
           fi
 
-      - name: Correr el aparato (v5 — rc, evidencia por tipo y conteo de tests)
+      - name: Correr el aparato (v6 — rc, evidencia por tipo e instrumento junitxml)
         run: |
           set -euo pipefail
           echo "RUN_APPARATUS: $APPARATUS"
+          rm -f /tmp/junit.xml
+          inicio=$(date +%s)
           log=$(mktemp)
           set +e
           bash -c "$APPARATUS" 2>&1 | tee "$log"
@@ -290,59 +331,62 @@ jobs:
           fi
 
           set +e
-          python3 - "$log" <<'PY'
-          import re, sys
+          python3 - "$inicio" <<'PY'
+          import os, sys
+          import xml.etree.ElementTree as ET
 
-          txt = open(sys.argv[1], encoding='utf-8', errors='replace').read()
+          RUTA = '/tmp/junit.xml'
+          inicio = int(sys.argv[1]) if len(sys.argv) > 1 else 0
 
-          # Contadores POSITIVOS por familia de runner. Cada patrón captura un entero.
-          # El ancla `^[^A-Za-z0-9]*` acepta la decoración de cada runner: sangría de
-          # mocha, glifo «ℹ» de node --test y la línea `==== N passed ====` de pytest
-          # sin -q. Sin ella el instrumento se vuelve más frágil que el objeto medido.
-          positivos = [
-              r'^\s*(?:\u2139\s*|#\s*)?pass\s+(\d+)\s*$',   # node --test spec «ℹ pass N» / TAP «# pass N»
-              r'^\s*Ran\s+(\d+)\s+tests?\s+in',        # unittest
-              r'^\s*Tests?:\s*(\d+)\s+passed',         # jest
-              r'^\s*Tests\s+(\d+)\s+passed',           # vitest
-              r'^[^A-Za-z0-9]*(\d+)\s+passed',         # pytest «N passed in …» (con o sin -q)
-              r'^[^A-Za-z0-9]*(\d+)\s+passing',        # mocha «  N passing»
-              r'^[^A-Za-z0-9]*(\d+)\s+tests?\s+passed',  # bun / genérico
-              r'^\s*ok\s+\d+',                         # TAP: una línea ok = un test
-          ]
-          # Contadores NEGATIVOS explícitos: si el runner DICE cero, es rojo aunque
-          # otra línea parezca positiva.
-          negativos = [
-              r'^\s*(?:\u2139\s*|#\s*)?pass\s+0\s*$',
-              r'^\s*Ran\s+0\s+tests?\s+in',
-              r'^\s*Tests?:\s*0\s+passed',
-              r'^\s*Tests\s+0\s+passed',
-              r'^[^A-Za-z0-9]*0\s+passed',
-              r'^[^A-Za-z0-9]*0\s+passing',
-              r'^[^A-Za-z0-9]*0\s+tests?\s+passed',
-              r'no\s+tests?\s+ran',
-          ]
+          def local(tag):
+              return tag.rsplit('}', 1)[-1]
 
-          cuenta = 0
-          for p in positivos:
-              if p == r'^\s*ok\s+\d+':
-                  cuenta = max(cuenta, len(re.findall(p, txt, re.M)))
-              else:
-                  for m in re.findall(p, txt, re.M):
-                      try:
-                          cuenta = max(cuenta, int(m))
-                      except ValueError:
-                          pass
-
-          cero_explicito = any(re.search(p, txt, re.M) for p in negativos)
-
-          if cero_explicito:
-              print("VACUIDAD_EJECUCION: el runner declaró 0 tests ejecutados — failing closed.")
+          if not os.path.exists(RUTA):
+              print("NO_JUNITXML: mide=tests y el aparato no generó /tmp/junit.xml "
+                    "(declara --junitxml=/tmp/junit.xml dentro de 'comando:') — failing closed.")
               sys.exit(1)
-          if cuenta < 1:
-              print("VACUIDAD_EJECUCION: la salida no reporta ningún test ejecutado "
-                    "(se buscaron formatos de pytest, unittest, node --test, jest, vitest, mocha, bun y TAP) — failing closed.")
+
+          mtime = int(os.path.getmtime(RUTA))
+          if inicio and mtime < inicio - 1:
+              print(f"JUNIT_VIEJO: /tmp/junit.xml es anterior a esta corrida "
+                    f"(mtime {mtime} < inicio {inicio}); ese informe no lo produjo el aparato — failing closed.")
               sys.exit(1)
-          print(f"EJECUCION_OK: {cuenta} test(s) reportados por el runner.")
+
+          try:
+              raiz = ET.parse(RUTA).getroot()
+          except Exception as e:
+              print(f"JUNIT_INVALIDO: /tmp/junit.xml no parsea ({e}) — failing closed.")
+              sys.exit(1)
+
+          casos = [e for e in raiz.iter() if local(e.tag) == 'testcase']
+          if not casos:
+              print("NO_TESTS: el informe no tiene ningún elemento <testcase>; "
+                    "un informe sin casos no mide nada — failing closed.")
+              sys.exit(1)
+
+          fallos = errores = omitidos = 0
+          for c in casos:
+              hijos = {local(h.tag) for h in c}
+              if 'failure' in hijos:
+                  fallos += 1
+              if 'error' in hijos:
+                  errores += 1
+              if 'skipped' in hijos:
+                  omitidos += 1
+
+          if fallos or errores:
+              print(f"TESTS_FAILED: {fallos} fallo(s) y {errores} error(es) en {len(casos)} casos "
+                    f"según el informe; el informe manda sobre el rc — failing closed.")
+              sys.exit(1)
+
+          medidos = len(casos) - omitidos
+          if medidos < 1:
+              print(f"VACUIDAD_SKIP: los {len(casos)} casos del informe están omitidos; "
+                    f"un verde de casos que no corrieron es un falso verde — failing closed.")
+              sys.exit(1)
+
+          print(f"EJECUCION_OK: {medidos} test(s) ejecutados de {len(casos)} casos · "
+                f"{fallos} fallos · {errores} errores · {omitidos} omitidos (junitxml).")
           PY
           rc2=$?
           set -e
