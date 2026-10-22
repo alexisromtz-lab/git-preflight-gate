@@ -254,7 +254,9 @@ concurrency:
 
 jobs:
   tests:
-    if: github.repository != 'alexisromtz-lab/platino-labs'
+    # HUELLA-FUGA-CI-GUARD-SIN-NOMBRE-PRIVADO-20261022
+    # El job mide en TODO repo: la guarda por nombre de arbol privado dejaba el
+    # contrato en `skipped`, y el silencio no es un verde.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
