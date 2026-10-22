@@ -72,7 +72,7 @@
 #     `set +…` 0. El veto no pone rojo a ningún adoptante; `&&` se conserva porque
 #     propaga el fallo y es la forma legítima de encadenar manifiesto y tests.
 #   · Alcance declarado: hoy 0 repos Python declaran `sintaxis` (censo: 1
-#     adoptante en todo el portafolio, `meta-webhook`, y es Node). El veto se
+#     repositorio no Python). El veto se
 #     escribe igual porque el hueco es de la LEY, no del adoptante: una ley con un
 #     agujero espera a que alguien lo encuentre.
 #   · LÍMITE DECLARADO: el veto es textual, no un parser de shell. Un operador
@@ -147,7 +147,7 @@
 # ERRATA 1 (v5, medida en producción): el parseador de conteo no conocía el
 # formato NO silencioso de pytest — `====== 26 passed in 0.10s ======` — y puso
 # en rojo con VACUIDAD_EJECUCION a protocol-core (run 39515729665),
-# protocol-core-dist y motor-nesting, que SÍ habían ejecutado 26, 8 y 4 tests.
+# Consultar los resultados de pruebas en la salida de este job.
 # La decoración `=` al inicio de la línea hacía fallar el ancla `^\s*`. Es el
 # tercer falso rojo de la familia (antes: sangría de mocha, glifo ℹ de node).
 # Cura: ancla por NO-alfanumérico (`^[^A-Za-z0-9]*`) y se recupera `N passing`
