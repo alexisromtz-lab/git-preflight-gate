@@ -129,6 +129,69 @@ El primero protege una escritura; el segundo audita un árbol de workflows. Comp
 doctrina (fail-closed, causa impresa, cero archivos = imposibilidad declarada), no el
 código.
 
+## Instalarlo en tu repositorio en 1 minuto
+
+<!-- HUELLA-BADGE-PLATINO-README-20261031 -->
+
+```bash
+mkdir -p .github/workflows
+curl -fsSL https://raw.githubusercontent.com/alexisromtz-lab/git-preflight-gate/main/templates/platino-gate.yml \
+  -o .github/workflows/platino-gate.yml
+git add .github/workflows/platino-gate.yml
+git commit -m "ci: platino preflight gate"
+git push
+```
+
+Eso es todo: el workflow se dispara en el siguiente `push` o PR.
+
+### El archivo debe llamarse `platino-gate.yml` (esto es un contrato, no un consejo)
+
+Si lo renombras —`ci.yml`, `gate.yml`, `platino-gate.yaml`— el primer job falla
+cerrado con `RC 20` y te dice por qué. La razón es medida, no estética: el badge
+de estado se resuelve **por nombre de archivo** (`.../workflow/status/TU-REPO/TU-REPO/platino-gate.yml`).
+Con otro nombre, el badge leería *tu* workflow de CI, no este gate, y publicaría un
+verde que no mide nada. El contrato está dentro del workflow, no en esta página.
+
+Falsado por `tests/test_platino_gate_template.py`: 5 casos de nombre y 5
+estructurales, `RC 0` solo si los 10 concuerdan; un template mutado para aceptar
+cualquier `.yml` devuelve `RC 1` nombrando la fila culpable.
+
+## El badge
+
+Al terminar el run, la pestaña **Summary** publica el badge ya rellenado con tu
+`owner/repo`. Hay dos, y no son lo mismo:
+
+| badge | qué afirma | permisos que pide |
+|---|---|---|
+| de **estado** (dinámico) | el resultado real del run más reciente de `platino-gate.yml` | `contents: read` |
+| **sello** (estático) | «este repositorio pasó el gate» | `contents: read` |
+
+```markdown
+[![Platino Preflight Gate](https://img.shields.io/github/actions/workflow/status/OWNER/REPO/platino-gate.yml?label=preflight%20gate&branch=main)](https://github.com/alexisromtz-lab/la-auditora)
+
+[![Audited by Platino Labs](https://img.shields.io/badge/audited_by-Platino_Labs-6f42c1)](https://github.com/alexisromtz-lab/la-auditora)
+```
+
+El de estado no puede mentir: lo dibuja GitHub desde el run. **El sello, sí**: es un
+literal que cualquiera puede pegar en verde sin haber corrido nada. Ponlo solo cuando
+el run esté en verde — el gate no lo puede verificar por ti.
+
+**Cero permisos de escritura, en los dos casos.** El workflow no toca tu README, no
+pide `contents: write` y no necesita ningún servicio nuestro: el badge es una URL de
+`shields.io` que lee el estado público de tu propio workflow. No hay endpoint que
+hospedar, ni token que caducar.
+
+### Qué mide y qué no
+
+| mide | no mide |
+|---|---|
+| topología de autoridad en `.github/workflows/`: `permissions`, disparadores, `uses` por SHA, sumideros de ejecución | si tu código hace lo que dice |
+| siete causas tipadas, `RC = min(causas)`, `UNIVERSO_VACIO` = causa `31` | los permisos por defecto del `GITHUB_TOKEN` a nivel de organización |
+| el árbol que tienes, en el commit que corre | confianza OIDC / Trusted Publishing en el registro destino |
+
+El segundo bloque está impreso en cada run, bajo `RESIDUO DECLARADO`. Un gate que no
+declara sus límites no es un gate: es una promesa.
+
 ## Licencia
 
 MIT. Ver `LICENSE`.
