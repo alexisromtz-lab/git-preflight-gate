@@ -91,16 +91,18 @@ Identidad medida del instrumento copiado a este árbol:
 Uso como consumidor:
 
 ```yaml
-- uses: alexisromtz-lab/git-preflight-gate@v0.1.2
+- uses: alexisromtz-lab/git-preflight-gate@v0.1.3
   with:
     workflows-dir: .github/workflows
     fail-on-red: "true"
 ```
 
-<!-- HUELLA-BADGE-V012-PUNTERO-20261031 -->
-`v0.1.2` y `v0.1.1` ejecutan el mismo `action.yml` (`9ef420ec`) y el mismo
-`sim/gate_workflows_ci.py` (`ff9c69a9`); `v0.1.2` sólo añade el template de
-adopción y esta documentación. Si fijas por SHA, usa el commit —no el tag—.
+<!-- HUELLA-RELEASE-V013-20261031 -->
+`v0.1.3`, `v0.1.2` y `v0.1.1` ejecutan el mismo `action.yml` (`9ef420ec`) y el mismo
+`sim/gate_workflows_ci.py` (`ff9c69a9`): el código del gate no cambió entre los tres.
+Lo que cambia es el envoltorio de adopción —`v0.1.2` añadió `templates/platino-gate.yml`
+y `v0.1.3` añadió `action-selftest.yml`, la alineación del manifiesto y esta
+documentación—. Si fijas por SHA, usa el commit —no el tag—.
 
 Los cuatro inputs (`workflows-dir`, `root`, `python-bin`, `fail-on-red`) y los dos
 outputs (`rc`, `veredicto`) conservan el contrato del `action.yml` que este repositorio
