@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "git-preflight-gate"
-version = "0.1.1"
+version = "0.1.2"
 description = "Pre-write preflight gate (bash) and CI authority gate (Python composite action): fail-closed, standard library only except PyYAML for the CI extra."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -19,6 +19,11 @@ ci-authority-gate = ["PyYAML==6.0.3"]
 Homepage = "https://github.com/alexisromtz-lab/git-preflight-gate"
 
 [tool.setuptools]
+# HUELLA-PYPROJECT-V012-ALINEADO-20261031: la version del manifiesto sigue al
+# tag publicado. Estaba en 0.1.1 mientras el tag era v0.1.2, y el log de
+# `pip install` en un runner real lo delata: "Collecting PyYAML==6.0.3 (from
+# git-preflight-gate==0.1.1)" con el tag en v0.1.2. Un numero que nombra otra
+# cosa es una fila desfasada, no un detalle cosmetico.
 # El repositorio no distribuye modulos importables: el instrumento de la accion
 # vive en sim/gate_workflows_ci.py y se invoca por ruta absoluta. El empaquetado
 # existe solo para que `pip install "<action_dir>[ci-authority-gate]"` resuelva

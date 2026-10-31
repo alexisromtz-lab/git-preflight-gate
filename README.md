@@ -197,6 +197,19 @@ hospedar, ni token que caducar.
 El segundo bloque está impreso en cada run, bajo `RESIDUO DECLARADO`. Un gate que no
 declara sus límites no es un gate: es una promesa.
 
+### Cómo se prueba el propio envoltorio
+
+<!-- HUELLA-BADGE-SELFTEST-DOC-20261031 -->
+El `action.yml` no se prueba leyendo su YAML: se ejecuta. En cada push a `main`, el
+workflow [`action-selftest.yml`](.github/workflows/action-selftest.yml) corre la acción
+dos veces con `uses: ./` —sobre este mismo repositorio, donde exige `rc=0` / `PASA`, y
+sobre una fixture envenenada en `tests/fixtures/sumidero`, donde exige `rc=2` /
+`SUMIDERO_IMPUDO`—. Si la instalación del extra (`pip install "<action_dir>[ci-authority-gate]"`)
+o el enrutado de inputs se rompen, enrojece aquí antes de enrojecer en tu runner.
+
+Un self-test que sólo sabe estar verde no discrimina nada: por eso el segundo caso exige
+que la acción **falle** con la causa correcta.
+
 ## Licencia
 
 MIT. Ver `LICENSE`.
