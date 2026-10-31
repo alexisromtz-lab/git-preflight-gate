@@ -1,0 +1,82 @@
+# HUELLA-ACTION-SELFTEST-END-TO-END-20261031
+# El envoltorio compuesto no lo ejercitaba nadie: el CI de este repositorio
+# invocaba el instrumento (`sim/gate_workflows_ci.py`) por ruta y nunca pasaba
+# por `action.yml`. Eso dejaba sin medir la unica linea que el adoptante si
+# ejecuta en su runner:
+#     pip install "<action_dir>[ci-authority-gate]"
+# y sin medir el enrutado de inputs (directorio -> --root, archivo -> --file).
+#
+# Este workflow corre el action contra este mismo arbol (via positiva) y contra
+# una fixture envenenada (control negativo). Si el envoltorio se rompe, se ve
+# aqui antes de que lo vea el primero que instale el template.
+name: action-selftest
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-selftest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  via-positiva:
+    name: El action mide este repositorio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - id: self
+        uses: ./
+        with:
+          workflows-dir: .github/workflows
+          fail-on-red: "true"
+      - name: Exigir rc=0 y veredicto=PASA
+        env:
+          RC: ${{ steps.self.outputs.rc }}
+          VEREDICTO: ${{ steps.self.outputs.veredicto }}
+        run: |
+          set -u
+          printf 'rc=%s veredicto=%s\n' "$RC" "$VEREDICTO"
+          if [ "$RC" != "0" ]; then
+            printf 'VIA POSITIVA ROJA: rc=%s (esperado 0)\n' "$RC" >&2
+            exit 20
+          fi
+          if [ "$VEREDICTO" != "PASA" ]; then
+            printf 'VIA POSITIVA ROJA: veredicto=%s (esperado PASA)\n' "$VEREDICTO" >&2
+            exit 21
+          fi
+
+  control-negativo:
+    name: El action enrojece con una fixture envenenada
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # fail-on-red=false: la accion no debe abortar; lo que se mide es el RC
+      # publicado, no el fallo del step. Un self-test que solo sabe estar verde
+      # no discrimina nada.
+      - id: poison
+        uses: ./
+        with:
+          workflows-dir: tests/fixtures/sumidero/.github/workflows
+          root: tests/fixtures/sumidero
+          fail-on-red: "false"
+      - name: Exigir rc=2 y veredicto=FALLO CERRADO
+        env:
+          RC: ${{ steps.poison.outputs.rc }}
+          VEREDICTO: ${{ steps.poison.outputs.veredicto }}
+        run: |
+          set -u
+          printf 'rc=%s veredicto=%s\n' "$RC" "$VEREDICTO"
+          if [ "$RC" != "2" ]; then
+            printf 'CONTROL NEGATIVO NO DISCRIMINA: rc=%s (esperado 2 SUMIDERO_IMPUDO)\n' "$RC" >&2
+            exit 22
+          fi
+          if [ "$VEREDICTO" != "FALLO CERRADO" ]; then
+            printf 'CONTROL NEGATIVO NO DISCRIMINA: veredicto=%s (esperado FALLO CERRADO)\n' "$VEREDICTO" >&2
+            exit 23
+          fi

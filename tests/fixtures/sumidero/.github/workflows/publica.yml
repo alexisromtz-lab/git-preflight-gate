@@ -1,0 +1,20 @@
+# HUELLA-FIXTURE-CONTROL-NEGATIVO-20261031
+# Fixture de CONTROL NEGATIVO del workflow `action-selftest`.
+#
+# NO es un workflow de este repositorio: vive fuera de `.github/workflows/`, asi
+# que GitHub nunca lo ejecuta. Su unico consumidor es el gate, invocado como
+#   sim/gate_workflows_ci.py --root tests/fixtures/sumidero
+# y su unico contrato es producir RC 2 SUMIDERO_IMPUDO (id-token: write sin
+# actions/download-artifact en el job). Si este archivo se "arregla", el control
+# negativo deja de discriminar y el action-selftest enrojece a proposito.
+name: fixture-sumidero
+on:
+  release:
+    types: [published]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - run: npm publish --provenance ./*.tgz
