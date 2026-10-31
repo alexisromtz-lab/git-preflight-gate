@@ -1,4 +1,6 @@
-# git-preflight-gate
+# CI Authority Gate
+
+**Repository:** [`git-preflight-gate`](https://github.com/alexisromtz-lab/git-preflight-gate) · **Marketplace:** [Install the action](https://github.com/marketplace/actions/ci-authority-gate)
 
 **Un gate de integridad para agentes de IA autónomos: que un bot no ensucie el árbol
 ni cometa colisiones de concurrencia.**
